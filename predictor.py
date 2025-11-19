@@ -4,7 +4,7 @@ import cv2
 import numpy as np
 from ultralytics import YOLO
 import yaml
-from typing import Dict, Any, List
+from typing import Dict, Any
 import io
 from PIL import Image
 import logging
@@ -21,7 +21,11 @@ class FoodPredictor:
         self.nutrition_mapping = {}
         self.food_categories = []
         self.model_loaded = False
-        
+
+        # NEW: cho phép chỉnh ngưỡng conf 1 chỗ
+        self.conf_threshold = 0.25  # ↓↓↓ giảm từ 0.5 xuống 0.25 để giống lúc train
+        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+
         self._validate_model_files()
         self.load_model()
     
@@ -53,15 +57,18 @@ class FoodPredictor:
             # Load YOLO model
             model_path = os.path.join(self.models_dir, "best.pt")
             self.model = YOLO(model_path)
-            logger.info("✅ YOLO model loaded successfully")
-            
-            # Load dataset configuration
+
+            # Đưa model lên GPU nếu có
+            self.model.to(self.device)
+            logger.info(f"✅ YOLO model loaded on device: {self.device}")
+
+            # Load dataset configuration (class names)
             config_path = os.path.join(self.models_dir, "data.yaml")
             with open(config_path, 'r', encoding='utf-8') as f:
                 config = yaml.safe_load(f)
                 self.food_categories = config.get('names', [])
             logger.info(f"✅ Loaded {len(self.food_categories)} food categories")
-            
+
             # Load nutrition mapping
             nutrition_path = os.path.join(self.models_dir, "nutrition_mapping.json")
             with open(nutrition_path, 'r', encoding='utf-8') as f:
@@ -132,8 +139,14 @@ class FoodPredictor:
             h, w = image_array.shape[:2]
             img_area = h * w
             
-            # Run detection
-            results = self.model(image_array_bgr, conf=0.5, verbose=False)
+            # Run detection với conf thấp hơn (giống khi train/val)
+            results = self.model(
+                image_array_bgr,
+                conf=self.conf_threshold,   # 0.25
+                verbose=False
+            )
+
+            logger.info(f"🔍 Raw boxes from YOLO: {len(results[0].boxes)}")
             
             detections = []
             total_nutrition = {
@@ -154,9 +167,10 @@ class FoodPredictor:
                 class_id = int(box.cls[0])
                 confidence = float(box.conf[0])
                 bbox = box.xyxy[0].cpu().numpy()
-                
-                if confidence < 0.3:
-                    continue
+
+                # ❌ BỎ bước lọc confidence lần 2 (trước đây <0.3 bị bỏ)
+                # if confidence < 0.3:
+                #     continue
                 
                 # Calculate bounding box area
                 bbox_w = bbox[2] - bbox[0]

@@ -4,13 +4,11 @@ from fastapi.responses import JSONResponse
 from predictor import FoodPredictor
 import uvicorn
 import logging
-import os
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Initialize app
 app = FastAPI(
     title="Food Nutrition API",
     description="AI-powered food detection and nutrition analysis",
@@ -101,7 +99,7 @@ async def analyze_food(image: UploadFile = File(...)):
         result = predictor.analyze_image(contents)
         
         # Log analysis results
-        logger.info(f"Analysis completed: {result['items_count']} items detected")
+        logger.info(f"Analysis completed: {result.get('items_count', 0)} items detected")
         
         return JSONResponse(content=result)
         
