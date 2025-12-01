@@ -10,7 +10,6 @@ from PIL import Image
 import logging
 import torch
 
-# Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -22,8 +21,7 @@ class FoodPredictor:
         self.food_categories = []
         self.model_loaded = False
 
-        # NEW: cho phép chỉnh ngưỡng conf 1 chỗ
-        self.conf_threshold = 0.25  # ↓↓↓ giảm từ 0.5 xuống 0.25 để giống lúc train
+        self.conf_threshold = 0.25  
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
         self._validate_model_files()
@@ -49,7 +47,7 @@ class FoodPredictor:
             logger.error(error_msg)
             raise FileNotFoundError(error_msg)
         
-        logger.info("✅ All model files validated")
+        logger.info("All model files validated")
     
     def load_model(self) -> None:
         """Load YOLO model and nutrition data"""
