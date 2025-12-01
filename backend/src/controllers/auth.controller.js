@@ -1,7 +1,7 @@
 // src/controllers/auth.controller.js
 import { auth, db } from "../lib/firebase.js";
 import { generateToken } from "../lib/utils.js";
-
+import { FIREBASE_API_KEY } from "../config/env.js";
 // Helper: build response user object
 const buildUserResponse = (userProfile, token) => ({
   uid: userProfile.uid,
@@ -19,10 +19,8 @@ const getUserProfileByUid = async (uid) => {
 
 // Helper: verify email/password qua REST API của Firebase Auth
 const verifyEmailPasswordWithFirebase = async (email, password) => {
-  const apiKey = process.env.FIREBASE_API_KEY;
-  if (!apiKey) {
-    throw new Error("FIREBASE_API_KEY is not configured");
-  }
+  // 🔐 Dùng FIREBASE_API_KEY đã validate sẵn
+  const apiKey = FIREBASE_API_KEY;
 
   const url = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${apiKey}`;
 
@@ -39,7 +37,6 @@ const verifyEmailPasswordWithFirebase = async (email, password) => {
   const data = await response.json();
 
   if (!response.ok) {
-    // data.error?.message có các mã như INVALID_PASSWORD, EMAIL_NOT_FOUND, ...
     const err = new Error(data.error?.message || "Failed to sign in");
     err.firebaseCode = data.error?.message;
     throw err;
@@ -290,10 +287,8 @@ export const resetPassword = async (req, res) => {
         .json({ message: "Reset code and new password are required" });
     }
 
-    const apiKey = process.env.FIREBASE_API_KEY;
-    if (!apiKey) {
-      return res.status(500).json({ message: "FIREBASE_API_KEY not configured" });
-    }
+    // 🔐 Dùng FIREBASE_API_KEY từ config
+    const apiKey = FIREBASE_API_KEY;
 
     const url = `https://identitytoolkit.googleapis.com/v1/accounts:resetPassword?key=${apiKey}`;
 

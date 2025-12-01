@@ -2,9 +2,9 @@
 import { auth, db } from "../lib/firebase.js";
 import { generateToken } from "../lib/utils.js";
 import { OAuth2Client } from "google-auth-library";
+import { GOOGLE_CLIENT_ID } from "../config/env.js";
 
-const googleClient = new OAuth2Client(process.env.GOOGLE_CLIENT_ID);
-
+const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
 // Helper: tạo hoặc lấy user theo email
 const getOrCreateUserByEmail = async ({
     email,

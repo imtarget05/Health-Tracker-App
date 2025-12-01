@@ -8,40 +8,51 @@ import {
     checkAuth,
     forgotPassword,
     resetPassword,
-    // loginWithEmailPassword // 👉 CÓ THỂ BỎ nếu không dùng
+    loginWithEmailPassword,
 } from "../controllers/auth.controller.js";
 import { facebookAuth, googleAuth } from "../controllers/oauth.controller.js";
 import { protectRoute } from "../middleware/auth.middleware.js";
 
 const router = express.Router();
 
-// ===== Core Auth theo spec =====
-router.post("/register", signup);          // POST /auth/register
-router.post("/login", loginWithToken);     // POST /auth/login (client gửi idToken)
-router.get("/me", protectRoute, checkAuth);// GET /auth/me
 
-// ===== Extra (nếu muốn giữ tương thích cũ) =====
-// router.post("/login-email", loginWithEmailPassword);
-router.post("/logout", logout);
-router.put("/update-profile", protectRoute, updateProfile);
-router.post("/forgot-password", forgotPassword);
-router.post("/reset-password", resetPassword);
+// Đăng ký bằng email/password (qua Firebase Admin)
+router.post("/register", signup);              // POST /auth/register
+
+// Login chính thức: FE dùng Firebase Client SDK lấy idToken rồi gửi lên
+router.post("/login", loginWithToken);         // POST /auth/login (client gửi idToken)
+
+// Login extra: FE gửi thẳng email/password lên BE, BE tự gọi REST API Firebase Auth
+// Nếu sau này không dùng thì chỉ cần xóa dòng dưới + bỏ import loginWithEmailPassword
+router.post("/login-email", loginWithEmailPassword); // POST /auth/login-email
+
+// Lấy thông tin user hiện tại (dựa trên JWT BE)
+router.get("/me", protectRoute, checkAuth);    // GET /auth/me
+
+// ===== Session / Profile =====
+router.post("/logout", logout);                            // POST /auth/logout
+router.put("/update-profile", protectRoute, updateProfile);// PUT /auth/update-profile
+
+// ===== Password reset =====
+router.post("/forgot-password", forgotPassword);   // POST /auth/forgot-password
+router.post("/reset-password", resetPassword);     // POST /auth/reset-password
 
 // ===== OAuth =====
-router.post("/facebook", facebookAuth);
-router.post("/google", googleAuth);
+router.post("/facebook", facebookAuth);            // POST /auth/facebook
+router.post("/google", googleAuth);                // POST /auth/google
 
+// ===== Test endpoints (dev) =====
 router.get("/facebook/test", (req, res) => {
     res.json({
         message: "Facebook OAuth endpoint is working",
-        note: "Use POST method with accessToken in body",
+        note: "Use POST /auth/facebook with accessToken in body",
     });
 });
 
 router.get("/google/test", (req, res) => {
     res.json({
         message: "Google OAuth endpoint is ready",
-        note: "Use POST method with Google ID token"
+        note: "Use POST /auth/google with Google ID token in body"
     });
 });
 

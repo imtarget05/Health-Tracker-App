@@ -50,16 +50,15 @@ const initializeFirebase = async () => {
         storage = admin.storage();
         bucket = storage.bucket(process.env.FIREBASE_STORAGE_BUCKET);
 
-        console.log("🔥 Firebase Admin initialized successfully");
+        console.log(" Firebase Admin initialized successfully");
 
         return { auth, db, storage, bucket, app };
     } catch (error) {
-        console.error("❌ Error initializing Firebase:", error);
+        console.error(" Error initializing Firebase:", error);
         throw error;
     }
 };
 
-// ⏳ Khởi tạo async 1 lần
 const firebasePromise = initializeFirebase();
 
 export { auth, db, storage, bucket, app, firebasePromise };

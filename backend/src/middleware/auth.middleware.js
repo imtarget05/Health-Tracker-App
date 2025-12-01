@@ -1,4 +1,3 @@
-// src/middleware/auth.middleware.js
 import { db } from '../lib/firebase.js';
 import { verifyToken } from '../lib/utils.js';
 
