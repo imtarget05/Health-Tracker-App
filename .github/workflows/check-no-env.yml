@@ -1,0 +1,15 @@
+name: Prevent .env files
+
+on: [push, pull_request]
+
+jobs:
+  check-no-env:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fail if .env present anywhere in repo
+        run: |
+          if git ls-files | grep -E '\.env$' ; then
+            echo "ERROR: .env files present in repository:" && git ls-files | grep -E '\.env$'
+            exit 1
+          fi
