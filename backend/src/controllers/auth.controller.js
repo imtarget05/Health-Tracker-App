@@ -1,5 +1,5 @@
 // src/controllers/auth.controller.js
-import { auth, db } from "../lib/firebase.js";
+import { firebasePromise, getAuth, getDb } from "../lib/firebase.js";
 import { generateToken } from "../lib/utils.js";
 import { FIREBASE_API_KEY } from "../config/env.js";
 // Helper: build response user object
@@ -13,6 +13,8 @@ const buildUserResponse = (userProfile, token) => ({
 
 // Helper: lấy user profile từ Firestore
 const getUserProfileByUid = async (uid) => {
+  await firebasePromise;
+  const db = getDb();
   const userDoc = await db.collection("users").doc(uid).get();
   return userDoc.exists ? userDoc.data() : null;
 };
@@ -62,6 +64,10 @@ export const signup = async (req, res) => {
     }
 
     // Tạo user trong Firebase Auth
+    await firebasePromise;
+    const auth = getAuth();
+    const db = getDb();
+
     const userRecord = await auth.createUser({
       email,
       password,

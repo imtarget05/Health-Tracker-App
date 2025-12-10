@@ -23,13 +23,35 @@ const PORT = process.env.PORT || 5001;
 app.use(express.json());
 app.use(cookieParser());
 
+// Quick request/response logger for debugging
+app.use((req, res, next) => {
+    const start = Date.now();
+    console.log(`[REQ] ${req.method} ${req.url}`);
+    res.on("finish", () => {
+        const ms = Date.now() - start;
+        console.log(`[RES] ${req.method} ${req.url} ${res.statusCode} - ${ms}ms`);
+    });
+    next();
+});
+
 const startServer = async () => {
     try {
         await firebasePromise;
         console.log("✅ Firebase Admin initialized");
 
         // Khởi chạy cron jobs cho notification
-        startNotificationSchedulers();
+        // Use DISABLE_SCHEDULER=1 in development to avoid running cron tasks here
+        const disableScheduler = process.env.DISABLE_SCHEDULER === '1' || process.env.DISABLE_SCHEDULER === 'true';
+        if (disableScheduler) {
+            console.log('Scheduler start skipped because DISABLE_SCHEDULER is set');
+        } else {
+            try {
+                startNotificationSchedulers();
+                console.log('Notification schedulers started');
+            } catch (err) {
+                console.error('Failed to start notification schedulers:', err);
+            }
+        }
 
         // ===== Mount tất cả routes =====
         app.use("/auth", authRoutes);          // /auth/...
@@ -44,6 +66,9 @@ const startServer = async () => {
 
         // Health check
         app.get("/api/health", (req, res) => {
+            console.log('[HANDLER] /api/health handler invoked');
+            // respond quickly
+            res.setHeader('Content-Type', 'application/json');
             res.json({
                 status: "OK",
                 message: "Server is running",

@@ -1,7 +1,7 @@
 // src/notifications/notification.logic.js
 import { sendPushToUser } from "./notification.service.js";
 import { NotificationType } from "./notification.templates.js";
-import { db } from "../lib/firebase.js";
+import { firebasePromise, getDb } from "../lib/firebase.js";
 
 const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"];
 
@@ -257,6 +257,9 @@ export const computeStreakDays = async ({ userId, maxLookbackDays = 30 }) => {
         d.setDate(today.getDate() - i);
         const dateStr = d.toISOString().slice(0, 10);
 
+        await firebasePromise;
+        const db = getDb();
+
         const mealsSnap = await db
             .collection("meals")
             .where("userId", "==", userId)
@@ -318,6 +321,9 @@ export const sendDailySummaryNotification = async ({
  */
 export const sendStreakReminderIfNeeded = async ({ userId, currentDate }) => {
     const dateStr = currentDate.toISOString().slice(0, 10);
+
+    await firebasePromise;
+    const db = getDb();
 
     const mealsSnap = await db
         .collection("meals")

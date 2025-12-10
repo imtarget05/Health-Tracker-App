@@ -1,6 +1,6 @@
 // src/controllers/ai.controller.js
 import { gemini, GEMINI_CHAT_MODEL } from "../config/gemini.js";
-import { db } from "../lib/firebase.js";
+import { firebasePromise, getDb } from "../lib/firebase.js";
 
 // Build system prompt dựa trên user + healthProfile
 const buildSystemPrompt = (user, healthProfile) => {
@@ -48,6 +48,8 @@ export const chatWithAiCoach = async (req, res) => {
     // Nếu có user → lấy profile để cá nhân hóa
     if (user?.uid || user?.userId) {
       const userId = user.uid || user.userId;
+      await firebasePromise;
+      const db = getDb();
       const snap = await db
         .collection("healthProfiles")
         .where("userId", "==", userId)

@@ -1,5 +1,5 @@
 // src/controllers/meal.controller.js
-import { db } from "../lib/firebase.js";
+import { firebasePromise, getDb } from "../lib/firebase.js";
 import { handleCalorieWarningAfterMealLogged } from "../notifications/notification.logic.js";
 
 const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"];
@@ -10,6 +10,8 @@ const getTimeStr = (d) => d.toISOString().slice(11, 16);  // HH:mm
 // Tạo bữa ăn từ log AI (foodDetections)
 export const createMealFromDetection = async (req, res) => {
     try {
+        await firebasePromise;
+        const db = getDb();
         const user = req.user;
         if (!user) {
             return res.status(401).json({ message: "Not authenticated" });
@@ -224,6 +226,8 @@ export const createMealFromDetection = async (req, res) => {
 // GET /meals?date=YYYY-MM-DD
 export const getMealsByDate = async (req, res) => {
     try {
+        await firebasePromise;
+        const db = getDb();
         const user = req.user;
         if (!user) {
             return res.status(401).json({ message: "Not authenticated" });

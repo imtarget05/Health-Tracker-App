@@ -1,5 +1,6 @@
 import cron from "node-cron";
-import { db } from "../lib/firebase.js";
+import { firebasePromise, getDb } from "../lib/firebase.js";
+import { getUserTargets } from "../lib/targets.js";
 import {
     sendDailySummaryNotification,
     sendStreakReminderIfNeeded,
@@ -8,26 +9,12 @@ import { sendPushToUser } from "./notification.service.js";
 import { NotificationType } from "./notification.templates.js";
 
 // Helper lấy profile & target
-const getUserTargets = async (userId) => {
-    const snap = await db
-        .collection("healthProfiles")
-        .where("userId", "==", userId)
-        .limit(1)
-        .get();
-
-    if (snap.empty) {
-        return { targetCalories: null, targetWater: null };
-    }
-
-    const profile = snap.docs[0].data();
-    return {
-        targetCalories: profile.targetCaloriesPerDay || null,
-        targetWater: profile.targetWaterMlPerDay || null,
-    };
-};
+// Use central helper getUserTargets in ../lib/targets.js
 
 // Helper lấy daily totals (calo + nước)
 const getDailyTotals = async (userId, dateStr) => {
+    await firebasePromise;
+    const db = getDb();
     // meals
     const mealSnap = await db
         .collection("meals")
@@ -59,6 +46,8 @@ const getDailyTotals = async (userId, dateStr) => {
 
 // Helper: lấy tất cả userId có healthProfiles (để gửi summary)
 const getAllActiveUserIds = async () => {
+    await firebasePromise;
+    const db = getDb();
     const snap = await db.collection("healthProfiles").get();
     const ids = new Set();
     snap.forEach((doc) => {
@@ -73,6 +62,9 @@ const getInactiveUserIds = async (days) => {
     const now = new Date();
     const cutoff = new Date(now);
     cutoff.setDate(now.getDate() - days);
+
+    await firebasePromise;
+    const db = getDb();
 
     const snap = await db
         .collection("users") // collection profile user
@@ -95,27 +87,35 @@ export const startNotificationSchedulers = () => {
         const dateStr = now.toISOString().slice(0, 10);
 
         console.log("[Cron] Running Daily Summary at 21:00 for", dateStr);
-
+        await firebasePromise;
         const userIds = await getAllActiveUserIds();
-        for (const userId of userIds) {
-            try {
-                const { targetCalories, targetWater } = await getUserTargets(userId);
-                const { totalCalories, totalWater } = await getDailyTotals(
-                    userId,
-                    dateStr
-                );
 
-                await sendDailySummaryNotification({
-                    userId,
-                    date: dateStr,
-                    totalCalories,
-                    targetCalories,
-                    totalWater,
-                    targetWater,
-                });
-            } catch (e) {
-                console.error("[Cron] DailySummary error for user", userId, e);
-            }
+        // Process users in chunks to limit concurrency and avoid timeouts
+        const CHUNK_SIZE = 30;
+        for (let i = 0; i < userIds.length; i += CHUNK_SIZE) {
+            const chunk = userIds.slice(i, i + CHUNK_SIZE);
+            await Promise.all(
+                chunk.map(async (userId) => {
+                    try {
+                        const { targetCalories, targetWaterMlPerDay } = await getUserTargets(userId);
+                        const { totalCalories, totalWater } = await getDailyTotals(
+                            userId,
+                            dateStr
+                        );
+
+                        await sendDailySummaryNotification({
+                            userId,
+                            date: dateStr,
+                            totalCalories,
+                            targetCalories,
+                            totalWater,
+                            targetWater: targetWaterMlPerDay,
+                        });
+                    } catch (e) {
+                        console.error("[Cron] DailySummary error for user", userId, e);
+                    }
+                })
+            );
         }
     });
 
@@ -125,13 +125,20 @@ export const startNotificationSchedulers = () => {
         const dateStr = now.toISOString().slice(0, 10);
         console.log("[Cron] Running Streak Reminder at 20:00 for", dateStr);
 
+        await firebasePromise;
         const userIds = await getAllActiveUserIds();
-        for (const userId of userIds) {
-            try {
-                await sendStreakReminderIfNeeded({ userId, currentDate: now });
-            } catch (e) {
-                console.error("[Cron] StreakReminder error for user", userId, e);
-            }
+        const CHUNK_SIZE = 50;
+        for (let i = 0; i < userIds.length; i += CHUNK_SIZE) {
+            const chunk = userIds.slice(i, i + CHUNK_SIZE);
+            await Promise.all(
+                chunk.map(async (userId) => {
+                    try {
+                        await sendStreakReminderIfNeeded({ userId, currentDate: now });
+                    } catch (e) {
+                        console.error("[Cron] StreakReminder error for user", userId, e);
+                    }
+                })
+            );
         }
     });
 
@@ -139,19 +146,26 @@ export const startNotificationSchedulers = () => {
     cron.schedule("0 10 * * *", async () => {
         console.log("[Cron] Running Re-engagement at 10:00");
 
+        await firebasePromise;
         const inactiveUserIds = await getInactiveUserIds(3);
-        for (const userId of inactiveUserIds) {
-            try {
-                await sendPushToUser({
-                    userId,
-                    type: NotificationType.RE_ENGAGEMENT,
-                    variables: {
-                        inactive_days: 3,
-                    },
-                });
-            } catch (e) {
-                console.error("[Cron] Re-engagement error for user", userId, e);
-            }
+        const CHUNK_SIZE = 50;
+        for (let i = 0; i < inactiveUserIds.length; i += CHUNK_SIZE) {
+            const chunk = inactiveUserIds.slice(i, i + CHUNK_SIZE);
+            await Promise.all(
+                chunk.map(async (userId) => {
+                    try {
+                        await sendPushToUser({
+                            userId,
+                            type: NotificationType.RE_ENGAGEMENT,
+                            variables: {
+                                inactive_days: 3,
+                            },
+                        });
+                    } catch (e) {
+                        console.error("[Cron] Re-engagement error for user", userId, e);
+                    }
+                })
+            );
         }
     });
 

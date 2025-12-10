@@ -1,5 +1,5 @@
 // src/controllers/oauth.controller.js
-import { auth, db } from "../lib/firebase.js";
+import { firebasePromise, getAuth, getDb } from "../lib/firebase.js";
 import { generateToken } from "../lib/utils.js";
 import { OAuth2Client } from "google-auth-library";
 import { GOOGLE_CLIENT_ID } from "../config/env.js";
@@ -13,6 +13,10 @@ const getOrCreateUserByEmail = async ({
     provider,
     providerId,
 }) => {
+    await firebasePromise;
+    const db = getDb();
+    const auth = getAuth();
+
     // Tìm trong Firestore trước
     const usersSnapshot = await db
         .collection("users")

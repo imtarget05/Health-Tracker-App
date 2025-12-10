@@ -1,5 +1,6 @@
 // src/controllers/health.controller.js
-import { db } from "../lib/firebase.js";
+import { firebasePromise, getDb } from "../lib/firebase.js";
+import { getUserTargets } from "../lib/targets.js";
 
 const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"];
 
@@ -83,6 +84,8 @@ export const getHealthProfile = async (req, res) => {
 
     const userId = user.uid || user.userId;
 
+    await firebasePromise;
+    const db = getDb();
     const snap = await db
       .collection("healthProfiles")
       .where("userId", "==", userId)
@@ -152,6 +155,8 @@ export const upsertHealthProfile = async (req, res) => {
     const nowIso = new Date().toISOString();
 
     // tìm profile cũ (nếu có)
+    await firebasePromise;
+    const db = getDb();
     const snap = await db
       .collection("healthProfiles")
       .where("userId", "==", userId)

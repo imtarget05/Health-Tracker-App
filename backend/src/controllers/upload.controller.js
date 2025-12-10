@@ -1,6 +1,6 @@
 // src/controllers/upload.controller.js
 import fs from "fs/promises";
-import { db, bucket } from "../lib/firebase.js";
+import { firebasePromise, getDb, getBucket } from "../lib/firebase.js";
 import { AI_SERVICE_URL } from "../config/env.js";
 import {
     handleAiProcessingSuccess,
@@ -13,6 +13,9 @@ const getPublicUrl = (bucket, filePath) =>
 export const uploadFileController = async (req, res) => {
     let localPath;
     try {
+        await firebasePromise;
+        const db = getDb();
+        const bucket = getBucket();
         if (!req.file) {
             return res.status(400).json({ message: "File is required (field: file)" });
         }

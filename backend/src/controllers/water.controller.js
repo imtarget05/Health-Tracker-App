@@ -1,5 +1,5 @@
 // src/controllers/water.controller.js
-import { db } from "../lib/firebase.js";
+import { firebasePromise, getDb } from "../lib/firebase.js";
 
 const getDateStr = (d) => d.toISOString().slice(0, 10);   // yyyy-MM-dd
 const getTimeStr = (d) => d.toISOString().slice(11, 16);  // HH:mm
@@ -7,6 +7,8 @@ const getTimeStr = (d) => d.toISOString().slice(11, 16);  // HH:mm
 // POST /water  -> log uống nước
 export const createWaterLog = async (req, res) => {
     try {
+        await firebasePromise;
+        const db = getDb();
         const user = req.user;
         if (!user) {
             return res.status(401).json({ message: "Not authenticated" });
@@ -53,6 +55,8 @@ export const createWaterLog = async (req, res) => {
 // GET /water?date=YYYY-MM-DD  -> lấy log + tổng nước trong ngày
 export const getWaterLogsByDate = async (req, res) => {
     try {
+        await firebasePromise;
+        const db = getDb();
         const user = req.user;
         if (!user) {
             return res.status(401).json({ message: "Not authenticated" });

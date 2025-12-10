@@ -1,5 +1,5 @@
 import fs from "fs/promises";
-import { db } from "../lib/firebase.js";
+import { firebasePromise, getDb } from "../lib/firebase.js";
 import { AI_SERVICE_URL } from "../config/env.js";
 
 const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"];
@@ -7,6 +7,8 @@ const MEAL_TYPES = ["breakfast", "lunch", "dinner", "snack"];
 export const scanFood = async (req, res) => {
   let localPath;
   try {
+    await firebasePromise;
+    const db = getDb();
     const user = req.user || null;
     const userId = user?.uid || user?.userId || null;
     const { mealType } = req.body;

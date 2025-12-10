@@ -1,4 +1,5 @@
-import { db } from "../lib/firebase.js";
+import { firebasePromise, getDb } from "../lib/firebase.js";
+import { getUserTargets } from "../lib/targets.js";
 
 const getDateStr = (d) => d.toISOString().slice(0, 10); // yyyy-MM-dd
 
@@ -24,22 +25,7 @@ const getStatus = (total, target) => {
   return "under";
 };
 
-// Lấy target từ healthProfiles
-const getUserTargets = async (userId) => {
-  const snap = await db
-    .collection("healthProfiles")
-    .where("userId", "==", userId)
-    .limit(1)
-    .get();
-
-  if (snap.empty) return { targetCalories: null, targetWaterMl: null };
-
-  const profile = snap.docs[0].data();
-  return {
-    targetCalories: profile.targetCaloriesPerDay || null,
-    targetWaterMl: profile.targetWaterMlPerDay || null,
-  };
-};
+// Targets are provided by `getUserTargets` in ../lib/targets.js
 
 // =================== DAILY SUMMARY ===================
 // GET /stats/daily?date=YYYY-MM-DD
@@ -54,10 +40,13 @@ export const getDailyStats = async (req, res) => {
 
     const targetDate = date || getDateStr(new Date());
 
-    // 1. Target từ healthProfiles
-    const { targetCalories, targetWaterMl } = await getUserTargets(userId);
+    await firebasePromise;
+    // 1. Target từ healthProfiles (standardized helper)
+    const { targetCalories, targetWaterMlPerDay } = await getUserTargets(userId);
+    const targetWaterMl = targetWaterMlPerDay;
 
     // 2. Tổng calories từ meals trong ngày
+    const db = getDb();
     const mealSnap = await db
       .collection("meals")
       .where("userId", "==", userId)
@@ -131,7 +120,11 @@ export const getWeeklyStats = async (req, res) => {
     const endDate = addDays(startDate, 6); // 7 ngày: start -> start+6
     const endStr = getDateStr(endDate);
 
-    const { targetCalories, targetWaterMl } = await getUserTargets(userId);
+    const { targetCalories, targetWaterMlPerDay } = await getUserTargets(userId);
+    const targetWaterMl = targetWaterMlPerDay;
+
+    await firebasePromise;
+    const db = getDb();
 
     // 1. Lấy meals trong khoảng tuần
     const mealsSnap = await db
@@ -222,7 +215,11 @@ export const getMonthlyStats = async (req, res) => {
     const startStr = getDateStr(startDate);
     const nextMonthStr = getDateStr(nextMonth); // dùng cho "< nextMonthStr"
 
-    const { targetCalories, targetWaterMl } = await getUserTargets(userId);
+    const { targetCalories, targetWaterMlPerDay } = await getUserTargets(userId);
+    const targetWaterMl = targetWaterMlPerDay;
+
+    await firebasePromise;
+    const db = getDb();
 
     // 1. Meals trong tháng
     const mealsSnap = await db

@@ -1,7 +1,8 @@
 import { NotificationTemplates } from "./notification.templates.js";
-import { db, app as firebaseApp } from "../lib/firebase.js";
+import { firebasePromise, getDb, getApp } from "../lib/firebase.js";
 
-const admin = firebaseApp; // backend em đang dùng firebase-admin rồi
+// admin will be retrieved after firebase init
+let admin;
 
 // Quiet hours: 23:00 - 06:00
 const DEFAULT_QUIET_HOURS = {
@@ -38,6 +39,9 @@ export const isInQuietHours = (date = new Date(), quiet = DEFAULT_QUIET_HOURS) =
 
 // Lấy tất cả FCM token của user
 const getUserDeviceTokens = async (userId) => {
+    await firebasePromise;
+    const db = getDb();
+
     const snap = await db
         .collection("deviceTokens")
         .where("userId", "==", userId)
@@ -97,7 +101,16 @@ export const sendPushToUser = async ({
         },
     };
 
-    const messaging = (await import("firebase-admin")).default.messaging();
+    // ensure admin SDK initialized
+    try {
+        await firebasePromise;
+        admin = getApp() || (await import("firebase-admin")).default;
+    } catch (e) {
+        console.error("[Notification] Firebase not initialized, cannot send push", e);
+        return;
+    }
+
+    const messaging = admin.messaging();
 
     const response = await messaging.sendEachForMulticast({
         tokens,
@@ -109,13 +122,18 @@ export const sendPushToUser = async ({
     );
 
     // Optional: lưu log
-    await db.collection("notifications").add({
-        userId,
-        type,
-        title,
-        body,
-        data,
-        sentAt: now.toISOString(),
-        read: false,
-    });
+    try {
+        const db = getDb();
+        await db.collection("notifications").add({
+            userId,
+            type,
+            title,
+            body,
+            data,
+            sentAt: now.toISOString(),
+            read: false,
+        });
+    } catch (e) {
+        console.warn('[Notification] Cannot write notification log to DB', e.message || e);
+    }
 };
