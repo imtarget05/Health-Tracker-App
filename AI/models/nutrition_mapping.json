@@ -1,0 +1,101 @@
+{
+    "Bread": {
+        "usda_name": "Average Bread",
+        "calories_per_100g": 322.8,
+        "protein_per_100g": 12.755999999999998,
+        "fat_per_100g": 10.116,
+        "carbs_per_100g": 46.672000000000004,
+        "fiber_per_100g": 2.7399999999999998,
+        "sugar_per_100g": 12.478
+    },
+    "Dairy product": {
+        "usda_name": "Average Dairy product",
+        "calories_per_100g": 292.1666666666667,
+        "protein_per_100g": 5.0200000000000005,
+        "fat_per_100g": 21.451666666666668,
+        "carbs_per_100g": 20.575,
+        "fiber_per_100g": 1.0166666666666666,
+        "sugar_per_100g": 7.565
+    },
+    "Dessert": {
+        "usda_name": "Average Dessert",
+        "calories_per_100g": 343.42857142857144,
+        "protein_per_100g": 5.137142857142856,
+        "fat_per_100g": 11.824285714285713,
+        "carbs_per_100g": 55.58571428571428,
+        "fiber_per_100g": 2.2142857142857144,
+        "sugar_per_100g": 28.577142857142857
+    },
+    "Egg": {
+        "usda_name": "Average Egg",
+        "calories_per_100g": 157.25,
+        "protein_per_100g": 7.48,
+        "fat_per_100g": 7.722499999999999,
+        "carbs_per_100g": 14.760000000000002,
+        "fiber_per_100g": 1.7750000000000001,
+        "sugar_per_100g": 4.180000000000001
+    },
+    "Fried food": {
+        "usda_name": "Average Fried food",
+        "calories_per_100g": 294.0,
+        "protein_per_100g": 10.950000000000001,
+        "fat_per_100g": 16.19,
+        "carbs_per_100g": 26.093333333333334,
+        "fiber_per_100g": 2.2666666666666666,
+        "sugar_per_100g": 1.21
+    },
+    "Meat": {
+        "usda_name": "Average Meat",
+        "calories_per_100g": 198.42857142857142,
+        "protein_per_100g": 17.53142857142857,
+        "fat_per_100g": 12.768571428571429,
+        "carbs_per_100g": 2.3000000000000003,
+        "fiber_per_100g": 0.18571428571428572,
+        "sugar_per_100g": 1.4214285714285713
+    },
+    "Noodles-Pasta": {
+        "usda_name": "Average Noodles-Pasta",
+        "calories_per_100g": 173.4,
+        "protein_per_100g": 4.732000000000001,
+        "fat_per_100g": 6.4159999999999995,
+        "carbs_per_100g": 24.182,
+        "fiber_per_100g": 1.6199999999999999,
+        "sugar_per_100g": 3.596000000000001
+    },
+    "Rice": {
+        "usda_name": "Average Rice",
+        "calories_per_100g": 191.25,
+        "protein_per_100g": 6.045000000000001,
+        "fat_per_100g": 3.0625,
+        "carbs_per_100g": 35.47,
+        "fiber_per_100g": 4.25,
+        "sugar_per_100g": 0.6775
+    },
+    "Seafood": {
+        "usda_name": "Average Seafood",
+        "calories_per_100g": 132.0,
+        "protein_per_100g": 17.209999999999997,
+        "fat_per_100g": 5.573333333333333,
+        "carbs_per_100g": 2.698333333333333,
+        "fiber_per_100g": 0.06666666666666667,
+        "sugar_per_100g": 0.0
+    },
+    "Soup": {
+        "usda_name": "Average Soup",
+        "calories_per_100g": 95.0,
+        "protein_per_100g": 5.914,
+        "fat_per_100g": 4.21,
+        "carbs_per_100g": 8.411999999999999,
+        "fiber_per_100g": 1.04,
+        "sugar_per_100g": 2.5780000000000003
+    },
+    "Vegetable-Fruit": {
+        "usda_name": "Average Vegetable-Fruit",
+        "calories_per_100g": 157.71428571428572,
+        "protein_per_100g": 3.4657142857142857,
+        "fat_per_100g": 3.4200000000000004,
+        "carbs_per_100g": 29.76142857142857,
+        "fiber_per_100g": 1.5571428571428572,
+        "sugar_per_100g": 7.460000000000001
+    }
+}

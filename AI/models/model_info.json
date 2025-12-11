@@ -1,0 +1,23 @@
+{
+    "best_model": "YOLOv8",
+    "yolov8_path": "/kaggle/working/models/yolov8_food11/weights/best.pt",
+    "food_categories": [
+        "Bread",
+        "Dairy product",
+        "Dessert",
+        "Egg",
+        "Fried food",
+        "Meat",
+        "Noodles-Pasta",
+        "Rice",
+        "Seafood",
+        "Soup",
+        "Vegetable-Fruit"
+    ],
+    "yolov8_metrics": {
+        "mAP50": 0.8331930843242595,
+        "mAP50-95": 0.8310853197551066,
+        "precision": 0.7903993394739038,
+        "recall": 0.7540865856833487
+    }
+}
