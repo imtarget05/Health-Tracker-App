@@ -1,0 +1,19 @@
+{
+    "model_path": "/kaggle/working/models/yolov8_food11/weights/best.pt",
+    "nutrition_mapping_path": "/kaggle/working/models/nutrition_mapping.json",
+    "food_categories": [
+        "Bread",
+        "Dairy product",
+        "Dessert",
+        "Egg",
+        "Fried food",
+        "Meat",
+        "Noodles-Pasta",
+        "Rice",
+        "Seafood",
+        "Soup",
+        "Vegetable-Fruit"
+    ],
+    "default_confidence": 0.25,
+    "default_portion_size": 150
+}

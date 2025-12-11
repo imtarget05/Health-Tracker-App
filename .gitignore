@@ -1,2 +1,7 @@
 # Ignore nested project directory
 Health-Tracker-App/
+
+# Ignore python venv and caches
+AI/.venv/
+AI/__pycache__/
+AI/*.pyc
