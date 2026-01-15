@@ -103,6 +103,7 @@ Required CI variables (examples):
 - `CI_REGISTRY`, `CI_REGISTRY_USER`, `CI_REGISTRY_PASSWORD`
 - `SONAR_HOST_URL`, `SONAR_TOKEN`, `SONAR_PROJECT_KEY`
 - `KUBE_CONFIG` (base64 kubeconfig), `KUBE_NAMESPACE`
+![Unknown](https://github.com/user-attachments/assets/cd154d40-718b-40f4-93d4-68ab46335564)
 
 ## 🛡 Security notes
 
