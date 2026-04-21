@@ -6,11 +6,16 @@
     "dev": "nodemon src/index.js",
     "start": "node src/index.js",
     "worker": "node src/worker/scheduler.js",
-    "test": "sh -c 'for f in test/*.test.js; do [ -f \"$f\" ] && node \"$f\" || true; done'",
+    "test": "jest --config jest.config.cjs --detectOpenHandles --forceExit",
+    "test:watch": "jest --config jest.config.cjs --watch",
+    "test:coverage": "jest --config jest.config.cjs --coverage --forceExit",
+    "test:integration": "jest --config jest.config.cjs --testPathPattern=integration --forceExit",
+    "test:unit": "jest --config jest.config.cjs --testPathPattern=test/ --forceExit",
     "seed": "node scripts/seed.js",
     "seed:emulator": "USE_FIREBASE_EMULATOR=1 node scripts/seed.js",
     "seed:prod": "CONFIRM_SEED=1 node scripts/seed.js",
-    "emulator:run-tests": "bash scripts/run-emulator-and-test.sh"
+    "emulator:run-tests": "bash scripts/run-emulator-and-test.sh",
+    "build": "echo 'No build step for Node.js'"
   },
   "keywords": [],
   "author": "",
@@ -24,17 +29,33 @@
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.1.0",
+    "express-rate-limit": "^8.3.2",
+    "file-type": "^22.0.1",
     "firebase": "^10.14.1",
     "firebase-admin": "^12.7.0",
     "google-auth-library": "^10.5.0",
-    "jsonwebtoken": "^9.0.2",
+    "ioredis": "^5.10.1",
+    "joi": "^18.1.2",
+    "jsonwebtoken": "^9.0.3",
     "luxon": "^3.7.2",
     "multer": "^2.0.2",
     "node-cron": "^4.2.1",
-    "node-fetch": "^3.3.2"
+    "node-fetch": "^3.3.2",
+    "nodemailer": "^8.0.5",
+    "pino": "^10.3.1",
+    "pino-http": "^11.0.0",
+    "redis": "^5.12.1",
+    "winston": "^3.19.0"
   },
   "devDependencies": {
-    "nodemon": "^3.1.11"
+    "@babel/preset-env": "^7.29.2",
+    "@types/jest": "^30.0.0",
+    "babel-jest": "^30.3.0",
+    "dotenv-cli": "^11.0.0",
+    "jest": "^30.3.0",
+    "nodemon": "^3.1.11",
+    "sqlite3": "^6.0.1",
+    "supertest": "^7.2.2"
   },
   "directories": {
     "test": "test"

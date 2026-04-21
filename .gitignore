@@ -1,3 +1,9 @@
+# macOS specific files (resource forks and metadata)
+._*
+.DS_Store
+.AppleDouble
+.LSOverride
+
 # Ignore nested project directory
 Health-Tracker-App/
 

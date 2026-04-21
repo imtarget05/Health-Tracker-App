@@ -1,6 +1,0 @@
-generic.secrets.security.detected-facebook-oauth.detected-facebook-oauth	frontend/.dart_tool/flutter_build/1ca52df21e450fb502e1479c1b85c3f8/.filecache	1	Facebook OAuth detected
-generic.secrets.security.detected-facebook-oauth.detected-facebook-oauth	frontend/.dart_tool/flutter_build/1ca52df21e450fb502e1479c1b85c3f8/kernel_snapshot_program.stamp	1	Facebook OAuth detected
-generic.secrets.security.detected-facebook-oauth.detected-facebook-oauth	frontend/.dart_tool/flutter_build/8e71be35aba50a458b515a29187e2669/.filecache	1	Facebook OAuth detected
-generic.secrets.security.detected-facebook-oauth.detected-facebook-oauth	frontend/.dart_tool/flutter_build/8e71be35aba50a458b515a29187e2669/kernel_snapshot_program.stamp	1	Facebook OAuth detected
-generic.secrets.security.detected-facebook-oauth.detected-facebook-oauth	frontend/.dart_tool/flutter_build/d227573585ac48bd74401f9121f0390b/.filecache	1	Facebook OAuth detected
-generic.secrets.security.detected-facebook-oauth.detected-facebook-oauth	frontend/.dart_tool/flutter_build/d227573585ac48bd74401f9121f0390b/kernel_snapshot_program.stamp	1	Facebook OAuth detected

@@ -3,12 +3,17 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 import { fileURLToPath } from "url";
+import { fileTypeFromBuffer } from "file-type";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// thư mục tạm ngay cạnh file middleware (hoặc bạn đổi theo ý)
+// Upload directory with size limits
 const uploadTempDir = path.join(__dirname, "tmp");
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif'];
+
 if (!fs.existsSync(uploadTempDir)) {
     fs.mkdirSync(uploadTempDir, { recursive: true });
 }
@@ -27,33 +32,116 @@ const storage = multer.diskStorage({
 
 const upload = multer({
     storage,
-    limits: { fileSize: 5 * 1024 * 1024 },
+    limits: {
+        fileSize: MAX_FILE_SIZE,
+        files: 1, // Only allow single file at a time
+    },
     fileFilter(req, file, cb) {
-        // Accept common image mimetypes and any mimetype that starts with image/
-        const allowedExt = ['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif'];
-
-        // If mimetype exists and clearly indicates image/* accept it
-        if (file.mimetype && typeof file.mimetype === 'string' && file.mimetype.startsWith('image/')) {
-            return cb(null, true);
-        }
-
-        // Some clients (gallery/older devices/emulators) may omit or set an odd mimetype.
-        // Fall back to checking the filename extension when available.
+        // Check file extension first
         const orig = file.originalname || '';
         const ext = path.extname(orig).toLowerCase();
-        if (ext && allowedExt.includes(ext)) {
-            return cb(null, true);
+
+        if (!ext || !ALLOWED_EXTENSIONS.includes(ext)) {
+            const err = new Error('Invalid file extension. Only jpg, png, webp, heic allowed');
+            err.status = 400;
+            return cb(err);
         }
 
-        // As a last resort accept common image-like stream when filename has no ext but fieldname suggests file
-        // (avoid blindly accepting all uploads). Log details to help debugging client uploads.
-        console.warn('upload.middleware: rejected file', { mimetype: file.mimetype, originalname: file.originalname, fieldname: file.fieldname });
+        // Check MIME type
+        const mimetype = file.mimetype || '';
+        if (!mimetype.startsWith('image/')) {
+            const err = new Error('Only image files are allowed');
+            err.status = 400;
+            return cb(err);
+        }
 
-        const err = new Error('Only image files are allowed (jpg, png, webp, heic)');
-        err.status = 400;
-        return cb(err);
+        cb(null, true);
     },
 });
 
+/**
+ * Enhanced file validation middleware
+ * Validates magic numbers (file signatures) to prevent disguised malware
+ */
+export const validateFileMagicNumber = async (req, res, next) => {
+    if (!req.file) {
+        return next();
+    }
+
+    try {
+        const filePath = req.file.path;
+        const fileBuffer = fs.readFileSync(filePath);
+
+        // Detect file type from magic numbers
+        const fileType = await fileTypeFromBuffer(fileBuffer);
+
+        if (!fileType) {
+            // Could not determine file type - reject to be safe
+            fs.unlinkSync(filePath);
+            return res.status(400).json({
+                message: 'Invalid file format - could not verify file type'
+            });
+        }
+
+        // Verify detected type matches declared extension
+        const declaredExt = path.extname(req.file.originalname).toLowerCase();
+        const detectedMime = fileType.mime;
+
+        if (!ALLOWED_MIME_TYPES.includes(detectedMime)) {
+            fs.unlinkSync(filePath);
+            return res.status(400).json({
+                message: 'File type not allowed. Only JPEG, PNG, WebP allowed'
+            });
+        }
+
+        // Optional: Check if declared extension matches detected type
+        // This helps catch disguised files
+        const mimeToExt = {
+            'image/jpeg': ['.jpg', '.jpeg'],
+            'image/png': ['.png'],
+            'image/webp': ['.webp'],
+        };
+
+        const validExts = mimeToExt[detectedMime] || [];
+        if (!validExts.includes(declaredExt)) {
+            console.warn(`[SECURITY] File extension mismatch: declared ${declaredExt}, detected ${detectedMime}`);
+            // Optional: reject mismatches to be strictI'll allow it but log for monitoring
+        }
+
+        // Attach verified type to request
+        req.file.verifiedMimeType = detectedMime;
+
+        next();
+    } catch (err) {
+        console.error('Error validating file:', err);
+        if (req.file && fs.existsSync(req.file.path)) {
+            fs.unlinkSync(req.file.path);
+        }
+        return res.status(500).json({
+            message: 'Error processing file'
+        });
+    }
+};
+
+// Cleanup temporary files periodically (every 24 hours)
+const cleanupOldUploads = () => {
+    const maxAge = 24 * 60 * 60 * 1000; // 24 hours
+
+    try {
+        fs.readdirSync(uploadTempDir).forEach(file => {
+            const filePath = path.join(uploadTempDir, file);
+            const stat = fs.statSync(filePath);
+            if (Date.now() - stat.mtimeMs > maxAge) {
+                fs.unlinkSync(filePath);
+                console.log(`[Cleanup] Deleted old upload: ${file}`);
+            }
+        });
+    } catch (err) {
+        console.error('Error cleaning up uploads:', err);
+    }
+};
+
+// Run cleanup every 6 hours
+setInterval(cleanupOldUploads, 6 * 60 * 60 * 1000);
 
 export default upload;

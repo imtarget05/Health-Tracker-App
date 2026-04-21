@@ -16,7 +16,8 @@ const run = async () => {
   try {
     const unique = Date.now();
     const email = `e2e+${unique}@example.com`;
-    const password = 'secret123';
+    // Use environment variable for password, never hardcode
+    const password = process.env.TEST_PASSWORD || 'test-password-change-me';
 
     console.log('Registering user', email);
     const regRes = await fetch(`${SERVER}/auth/register`, {

@@ -16,25 +16,66 @@ import workoutRoutes from "./routes/workout.route.js";
 
 import { firebasePromise } from "./lib/firebase.js";
 import { startSchedulers } from './notifications/notification.scheduler.js';
+import { logger } from "./lib/logger.js";
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 5001;
+
+// SECURITY: Parse CORS_ORIGINS from environment, never use wildcard "*" in production
 const ORIGINS = (process.env.CORS_ORIGINS || "http://localhost:3000,http://localhost:5173,http://localhost:8080,http://localhost:5001,http://127.0.0.1:5001").split(",").map(s => s.trim());
+
+// Validate that origins are properly configured
+if (process.env.NODE_ENV === 'production' && ORIGINS.includes('*')) {
+    console.error('ERROR: CORS_ORIGINS contains wildcard "*" in production - this is a security risk!');
+    process.exit(1);
+}
 
 app.use(express.json());
 app.use(cookieParser());
 
-// CORS for frontend web/app during development
+// ===== PHASE 4: Monitoring & Observability =====
+// Import Phase 4 services
+import { MetricsService } from "./lib/metrics.js";
+const metricsService = new MetricsService();
+
+// Health check endpoint for metrics
+app.get("/metrics", (req, res) => {
+    res.setHeader('Content-Type', 'text/plain');
+    res.send(metricsService.getPrometheusMetrics());
+});
+
+// Request latency tracking middleware (must be early)
+app.use((req, res, next) => {
+    req.startTime = Date.now();
+    
+    // Track response
+    const originalSend = res.send;
+    res.send = function(data) {
+        const duration = Date.now() - req.startTime;
+        metricsService.recordHttpRequest(req.method, req.path, res.statusCode, duration);
+        originalSend.call(this, data);
+    };
+    
+    next();
+});
+// ===== END PHASE 4 Metrics =====
+
+// CORS Configuration - Restrict to configured origins only
+// DO NOT use origin: "*" or origin: true - this allows ANY domain to access the API
 app.use(cors({
     origin: (origin, cb) => {
-        // Allow no-origin (mobile apps, curl) and configured origins
-        if (!origin || ORIGINS.includes(origin)) return cb(null, true);
+        // Allow requests with no origin (mobile apps, curl) and configured origins
+        if (!origin || ORIGINS.includes(origin)) {
+            return cb(null, true);
+        }
         console.warn(`[CORS] Blocked origin: ${origin}`);
         return cb(new Error("Not allowed by CORS"));
     },
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
 // Quick request/response logger for debugging
@@ -158,9 +199,40 @@ const startServer = async () => {
 startServer();
 
 // Error handler (must be after routes)
+// ===== PHASE 4: Centralized Error Handling =====
+const AppError = class extends Error {
+    constructor(statusCode, message, details = {}) {
+        super(message);
+        this.statusCode = statusCode;
+        this.details = details;
+        this.timestamp = new Date().toISOString();
+    }
+};
+
 app.use((err, req, res, next) => {
-    console.error('[ERROR HANDLER]', err && (err.stack || err.message || err));
-    const status = err && err.status ? err.status : 500;
-    const message = err && err.message ? err.message : 'Internal server error';
-    res.status(status).json({ message });
+    const statusCode = err.statusCode || err.status || 500;
+    const message = err.message || 'Internal server error';
+    
+    // Log error with context
+    logger.error('[ERROR HANDLER]', {
+        statusCode,
+        message,
+        path: req.path,
+        method: req.method,
+        userId: req.user?.userId || 'anonymous',
+        ip: req.ip,
+        stack: err.stack,
+    });
+    
+    // Record error metric
+    metricsService.recordError(err.name || 'UnknownError');
+    
+    res.status(statusCode).json({
+        success: false,
+        message,
+        statusCode,
+        timestamp: new Date().toISOString(),
+        ...(process.env.NODE_ENV === 'development' && { stack: err.stack })
+    });
 });
+// ===== END PHASE 4 Error Handling =====

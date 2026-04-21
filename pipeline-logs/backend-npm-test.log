@@ -1,7 +1,0 @@
-
-> backend@1.0.0 test
-> node test/notification.logic.test.js && node test/protect.middleware.test.js && ( [ "$USE_FIREBASE_EMULATOR" = "1" ] && node test/seed.integration.test.js || echo 'skipping seed.integration (emulator not enabled)')
-
-notification.logic test placeholder passed
-protect.middleware test placeholder passed
-skipping seed.integration (emulator not enabled)

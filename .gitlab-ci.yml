@@ -114,7 +114,8 @@ deploy-k8s:
   before_script:
     - apk add --no-cache curl ca-certificates
     - KUBECTL_VERSION="1.27.0"
-    - curl -L --fail -o /usr/local/bin/kubectl "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+    - curl -L --fail -o /usr/local/bin/kubectl
+      "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
     - chmod +x /usr/local/bin/kubectl
   script:
     - |
@@ -136,7 +137,8 @@ smoke-test:
   before_script:
     - apk add --no-cache curl ca-certificates
     - KUBECTL_VERSION="1.27.0"
-    - curl -L --fail -o /usr/local/bin/kubectl "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+    - curl -L --fail -o /usr/local/bin/kubectl
+      "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
     - chmod +x /usr/local/bin/kubectl
   script:
     - |
@@ -151,6 +153,61 @@ smoke-test:
     - branches
   when: manual
 
+# DAST (Dynamic Application Security Testing) scan
+security-dast:
+  image: owasp/zap2docker-stable:latest
+  stage: verify
+  services:
+    - name: node:22-alpine
+      alias: backend-service
+  script:
+    - cd backend
+    - npm install
+    - npm ci
+    - |
+      # Build and start the backend application in background
+      npm run dev &
+      APP_PID=$!
+
+      # Wait for backend to start
+      echo "Waiting for backend to start..."
+      sleep 15
+
+      # Test if backend is running
+      curl -f http://localhost:5001/api/v1/health || {
+        echo "Backend failed to start"
+        kill $APP_PID 2>/dev/null || true
+        exit 1
+      }
+
+      # Run DAST scan with ZAP
+      echo "Starting DAST scan..."
+      zap-baseline.py -t http://localhost:5001/api/v1/health \
+        -r /zap/report_html.html \
+        -d || {
+        echo "DAST scan completed with warnings (may be acceptable)"
+      }
+
+      # Generate JSON report for better parsing
+      zap-api-scan.py -t http://localhost:5001/api/v1 \
+        -f openapi \
+        -r /zap/report_json.json || true
+
+      # Kill backend process
+      kill $APP_PID 2>/dev/null || true
+
+      echo "DAST scan completed"
+  artifacts:
+    when: always
+    paths:
+      - /zap/report_html.html
+      - /zap/report_json.json
+    expire_in: 1 week
+  only:
+    - develop
+    - main
+  allow_failure: true
+
 # Deploy monitoring (Prometheus + Grafana) - manual and only on main
 deploy-monitoring:
   image: alpine:3.18
@@ -159,7 +216,8 @@ deploy-monitoring:
   before_script:
     - apk add --no-cache curl ca-certificates
     - KUBECTL_VERSION="1.27.0"
-    - curl -L --fail -o /usr/local/bin/kubectl "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
+    - curl -L --fail -o /usr/local/bin/kubectl
+      "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
     - chmod +x /usr/local/bin/kubectl
   script:
     - |

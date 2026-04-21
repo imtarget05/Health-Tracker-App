@@ -15,6 +15,10 @@ RUN apt-get update && apt-get install -y \
     libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
 
+# ✅ SECURITY: Create non-root user to run application
+RUN groupadd -g 1000 appuser && \
+    useradd -u 1000 -g appuser -s /sbin/nologin appuser
+
 # Cài dependency Python trước
 COPY requirements.txt .
 RUN pip install --upgrade pip && \
@@ -22,6 +26,12 @@ RUN pip install --upgrade pip && \
 
 # Copy code + model vào image
 COPY . .
+
+# ✅ SECURITY: Change ownership to non-root user
+RUN chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
 
 # Expose port trong container (Azure/AWS sẽ map ra ngoài)
 EXPOSE ${PORT}

@@ -49,9 +49,10 @@ service cloud.firestore {
       allow update, delete: if isSignedIn() && (resource.data.userId == request.auth.uid) || isAdmin();
     }
 
-    // notifications: created by server or admin; users can read their own
+    // notifications: SECURITY FIX - Only admin can create notifications
+    // Users can only read their own notifications
     match /notifications/{nid} {
-      allow create: if isAdmin() || isSignedIn();
+      allow create: if isAdmin();
       allow read: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
       allow update: if isAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
       allow delete: if isAdmin();

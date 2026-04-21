@@ -2,9 +2,10 @@
 import { firebasePromise, getAuth, getDb } from "../lib/firebase.js";
 import fs from "fs";
 import fetch from "node-fetch";
-import { generateToken } from "../lib/utils.js";
+import { generateAccessToken, generateRefreshToken, generateTokenPair, verifyRefreshToken } from "../lib/utils.js";
 import { FIREBASE_API_KEY } from "../config/env.js";
 import { sendPushToUser } from "../notifications/notification.service.js";
+import { sendPasswordResetEmail } from "../lib/email.service.js";  // ✅ NEW
 import { NotificationType } from "../notifications/notification.templates.js";
 // Helper: build response user object
 const buildUserResponse = (userProfile, token, firebaseCustomToken = null, existingAccount = false) => ({
@@ -495,22 +496,40 @@ export const forgotPassword = async (req, res) => {
 
     await firebasePromise;
     const auth = getAuth();
-    const resetLink = await auth.generatePasswordResetLink(email);
 
-    // TODO: gửi email thật sự bằng service (SendGrid, Nodemailer, ...)
-    console.log("Password reset link:", resetLink);
+    try {
+      // Generate password reset link from Firebase
+      const resetLink = await auth.generatePasswordResetLink(email);
 
-    return res.status(200).json({
-      message: "Password reset link sent to email",
-      resetLink: process.env.NODE_ENV === "development" ? resetLink : undefined,
-    });
+      // ✅ NEW: Send email with password reset link
+      try {
+        await sendPasswordResetEmail(email, resetLink);
+      } catch (emailError) {
+        console.error('[forgotPassword] Email send failed:', emailError?.message);
+        // Continue anyway - user can still use link from logs in development
+        if (process.env.NODE_ENV === 'production') {
+          return res.status(500).json({
+            message: 'Failed to send reset email. Please try again later.',
+          });
+        }
+      }
+
+      return res.status(200).json({
+        message: "Password reset link sent to email",
+        // ✅ Only show link in development for testing
+        resetLink: process.env.NODE_ENV === "development" ? resetLink : undefined,
+      });
+    } catch (firebaseError) {
+      if (firebaseError.code === "auth/user-not-found") {
+        // Don't reveal if user exists or not (security best practice)
+        return res.status(200).json({
+          message: "If an account exists, a reset link has been sent to your email",
+        });
+      }
+      throw firebaseError;
+    }
   } catch (error) {
     console.log("Error in forgot password:", error);
-
-    if (error.code === "auth/user-not-found") {
-      return res.status(404).json({ message: "User not found" });
-    }
-
     return res.status(500).json({ message: "Internal server error" });
   }
 };
@@ -549,6 +568,60 @@ export const resetPassword = async (req, res) => {
     return res.status(200).json({ message: "Password reset successfully" });
   } catch (error) {
     console.log("Error in reset password:", error);
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
+
+// ============= REFRESH TOKEN (✅ NEW) =============
+/**
+ * Refresh access token using refresh token
+ * POST /auth/refresh
+ * Body: { refreshToken?: string }  (or from cookie)
+ * Returns: { accessToken, expiresIn }
+ */
+export const refreshAccessToken = async (req, res) => {
+  try {
+    // Get refresh token from cookie or request body
+    let refreshToken = req.cookies?.refreshToken;
+
+    if (!refreshToken && req.body?.refreshToken) {
+      refreshToken = req.body.refreshToken;
+    }
+
+    if (!refreshToken) {
+      return res.status(401).json({ message: "Refresh token required" });
+    }
+
+    // Verify refresh token
+    let decoded;
+    try {
+      decoded = verifyRefreshToken(refreshToken);
+    } catch (error) {
+      console.warn('[refreshAccessToken] Invalid/expired refresh token:', error?.message);
+      return res.status(401).json({ message: "Invalid or expired refresh token" });
+    }
+
+    const userId = decoded.userId;
+
+    // Verify user still exists
+    await firebasePromise;
+    const db = getDb();
+    const userDoc = await db.collection("users").doc(userId).get();
+
+    if (!userDoc.exists) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    // Generate new access token
+    const newAccessToken = generateAccessToken(userId);
+
+    return res.status(200).json({
+      accessToken: newAccessToken,
+      expiresIn: 3600,  // 1 hour in seconds
+      tokenType: "Bearer",
+    });
+  } catch (error) {
+    console.error("Error in refresh token:", error);
     return res.status(500).json({ message: "Internal server error" });
   }
 };

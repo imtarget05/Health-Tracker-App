@@ -1,7 +1,8 @@
 import logging
 from typing import Any, Dict
+from functools import wraps
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Request
+from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 import httpx
@@ -25,9 +26,11 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# Read API key from env (optional): if set, require clients to include x-api-key header
+# Read API key from env (required): clients must include x-api-key header
 import os
 AI_API_KEY = os.environ.get('AI_API_KEY')
+if not AI_API_KEY:
+    logger.warning('[SECURITY] AI_API_KEY not set - running with API key protection DISABLED (DANGEROUS!)')
 
 # =========================
 # Khởi tạo model
@@ -40,15 +43,41 @@ except Exception as e:
     predictor = None
 
 # =========================
-# CORS
+# CORS - ✅ SECURITY: Only allow specific origins (NOT "*")
 # =========================
+# Customize these for your deployment
+ALLOWED_ORIGINS = os.environ.get('CORS_ORIGINS', 'http://localhost:5001,http://localhost:8080').split(',')
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # có thể siết lại khi lên production
+    allow_origins=ALLOWED_ORIGINS,  # ✅ Restricted origins (not "*")
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["POST", "OPTIONS"],  # ✅ Only allow POST for /predict, OPTIONS for preflight
     allow_headers=["*"],
 )
+
+# =========================
+# ✅ SECURITY: API Key validation middleware
+# =========================
+async def verify_api_key(request: Request):
+    """
+    Verify API key from x-api-key header
+    Called on protected endpoints
+    """
+    if not AI_API_KEY:
+        # API key disabled - allow all requests
+        logger.warning('[SECURITY] API_KEY check disabled')
+        return None
+    
+    api_key = request.headers.get('x-api-key')
+    if not api_key or api_key != AI_API_KEY:
+        logger.warning('[SECURITY] Invalid API key attempt from %s', request.client.host if request.client else 'unknown')
+        raise HTTPException(
+            status_code=401,
+            detail='Invalid or missing API key in x-api-key header'
+        )
+    
+    return api_key
 
 # =========================
 # Helper: chạy phân tích ảnh
@@ -76,12 +105,6 @@ def run_analysis(image_bytes: bytes) -> Dict[str, Any]:
             detail=f"Lỗi khi chạy mô hình: {e}",
         )
 
-def require_ai_key(request: Request):
-    if AI_API_KEY:
-        header = request.headers.get('x-api-key')
-        if not header or header != AI_API_KEY:
-            raise HTTPException(status_code=401, detail='Invalid API key')
-
 # =========================
 # Endpoint cơ bản
 # =========================
@@ -95,7 +118,7 @@ async def root():
 
 
 @app.get("/health")
-async def health():
+async def health(api_key: str = Depends(verify_api_key)):  # ✅ Require API key
     if predictor is None:
         return {"status": "error", "detail": "Model not loaded"}
     return {"status": "ok"}

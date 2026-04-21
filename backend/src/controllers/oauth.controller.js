@@ -109,32 +109,34 @@ const verifyFacebookLimitedLoginJwt = async ({ token, expectedAppId, nonce }) =>
         throw new Error('JWT audience does not match FACEBOOK_APP_ID');
     }
 
-    // Validate nonce only if the token actually carries a nonce claim.
-    // In some Limited Login variants, Meta doesn't include nonce/nonce_digest in the JWT.
-    // In that case we can't verify it, but signature + aud + expiration checks still provide
-    // the core security guarantees.
+    // SECURITY FIX: Validate nonce to prevent replay attacks
+    // If nonce is provided, the token MUST contain matching nonce or nonce_digest
     if (nonce) {
         const tokenNonce = payload.nonce;
         const tokenNonceDigest = payload.nonce_digest;
 
-        // If token carries a raw nonce, compare directly.
-        if (tokenNonce != null && String(tokenNonce) !== String(nonce)) {
-            console.warn('JWT nonce mismatch (raw nonce) - continuing due to relaxed policy');
-            // continue without throwing to allow login
+        let nonceValid = false;
+
+        // If token carries a raw nonce, compare directly
+        if (tokenNonce != null && String(tokenNonce) === String(nonce)) {
+            nonceValid = true;
         }
 
-        // If token carries a nonce_digest, compare with base64url(sha256(nonce)).
-        if (tokenNonceDigest != null) {
-            // compute sha256(nonce) -> base64url
+        // If token carries a nonce_digest, compare with base64url(sha256(nonce))
+        if (!nonceValid && tokenNonceDigest != null) {
             const hash = crypto.createHash('sha256').update(String(nonce)).digest();
             const b64 = hash.toString('base64')
                 .replace(/=/g, '')
                 .replace(/\+/g, '-')
                 .replace(/\//g, '_');
-            if (String(tokenNonceDigest) !== b64) {
-                console.warn('JWT nonce_digest mismatch - continuing due to relaxed policy');
-                // continue without throwing to allow login
+            if (String(tokenNonceDigest) === b64) {
+                nonceValid = true;
             }
+        }
+
+        // Throw error if nonce validation fails - prevents replay attacks
+        if (!nonceValid) {
+            throw new Error('JWT nonce verification failed - possible replay attack');
         }
     }
 

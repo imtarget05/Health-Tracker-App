@@ -1,4 +1,0 @@
-
-== smoke test via curl image ==
-{"status":"OK","message":"Server is running","timestamp":"2025-12-23T07:21:44.970Z","database":"Firebase Firestore","firebase":"Initialized"}
-200pod "curlpod" deleted from health namespace
