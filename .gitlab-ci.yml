@@ -4,22 +4,53 @@ stages:
   - semgrep
   - sonarqube
   - build
-  - deploy
+  - gitops # update kustomize overlays
+  - deploy # argocd sync + k8s apply
   - verify
 
 variables:
   NODE_IMAGE: "node:18"
   BACKEND_DIR: "backend"
+
+  # ── Harbor Registry ────────────────────────────────────────────────────────
+  # Set HARBOR_URL, HARBOR_USER, HARBOR_PASSWORD, HARBOR_PROJECT in CI variables
+  HARBOR_PROJECT: "${HARBOR_PROJECT:-health-tracker}"
+  BACKEND_IMAGE: "${HARBOR_URL}/${HARBOR_PROJECT}/backend:${CI_COMMIT_SHORT_SHA}"
+  AI_IMAGE: "${HARBOR_URL}/${HARBOR_PROJECT}/ai:${CI_COMMIT_SHORT_SHA}"
+
+  # Legacy GitLab registry tag (kept for backward compat, not pushed by default)
   IMAGE_NAME: "${CI_PROJECT_PATH}/backend"
   IMAGE_TAG: "${IMAGE_NAME}:${CI_COMMIT_SHORT_SHA}"
+
   # Required for docker:dind on GitLab shared runners
   DOCKER_DRIVER: "overlay2"
   DOCKER_TLS_CERTDIR: ""
 
-# Run backend tests
+# ─── Rule anchors ────────────────────────────────────────────────────────────
+.rules-push-and-mr: &rules-push-and-mr
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH == 'main'
+    - if: $CI_COMMIT_BRANCH == 'develop'
+
+.rules-push-only: &rules-push-only
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+      when: never
+    - if: $CI_COMMIT_BRANCH == 'main'
+    - if: $CI_COMMIT_BRANCH == 'develop'
+
+.rules-main-only: &rules-main-only
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+      when: never
+    - if: $CI_COMMIT_BRANCH == 'main'
+
+# ─── Test ────────────────────────────────────────────────────────────────────
 test-backend:
   image: ${NODE_IMAGE}
   stage: test
+  <<: *rules-push-and-mr
   before_script:
     - cd ${BACKEND_DIR}
     - npm ci --no-audit --no-fund
@@ -40,10 +71,11 @@ test-backend:
     paths:
       - ${BACKEND_DIR}/node_modules/
 
-# Semgrep security scan (SAST)
+# ─── Semgrep ─────────────────────────────────────────────────────────────────
 semgrep-scan:
   image: python:3.11
   stage: semgrep
+  <<: *rules-push-and-mr
   before_script:
     - python3 -m pip install --upgrade pip
     - pip install semgrep
@@ -55,10 +87,11 @@ semgrep-scan:
     paths:
       - semgrep.log
 
-# SonarQube (conditional)
+# ─── SonarQube ───────────────────────────────────────────────────────────────
 sonarqube-scan:
   image: sonarsource/sonar-scanner-cli:latest
   stage: sonarqube
+  <<: *rules-push-and-mr
   script:
     - |
       if [ -n "$SONAR_HOST_URL" ] && [ -n "$SONAR_TOKEN" ]; then
@@ -71,46 +104,151 @@ sonarqube-scan:
       else
         echo "SONAR_HOST_URL or SONAR_TOKEN not set; skipping SonarQube scan"
       fi
-  only:
-    - branches
   allow_failure: true
 
-# Build Docker image and optionally push to registry if CI credentials provided
-docker-build:
+# ─── Docker build + push to Harbor ──────────────────────────────────────────
+docker-build-backend:
   image: docker:24
   stage: build
+  <<: *rules-push-only
   services:
     - name: docker:24-dind
-  script:
-    - cd ${BACKEND_DIR}
-    - |
-      # compute a safe, lowercase image tag using CI_REGISTRY_IMAGE (already lowercase)
-      IMAGE_TAG="${CI_REGISTRY_IMAGE}/backend:${CI_COMMIT_SHORT_SHA}"
-      IMAGE_TAG=$(echo "$IMAGE_TAG" | tr '[:upper:]' '[:lower:]')
-      docker build -t "$IMAGE_TAG" .
-      if [ -n "$CI_REGISTRY" ] && [ -n "$CI_REGISTRY_USER" ] && [ -n "$CI_REGISTRY_PASSWORD" ]; then
-        echo "Logging into registry ${CI_REGISTRY}"
-        echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
-        docker push "$IMAGE_TAG"
-      else
-        echo "Registry credentials not configured; built image will remain on runner only."
-      fi
-  artifacts:
-    when: always
-    paths:
-      - ${BACKEND_DIR}/Dockerfile
-  only:
-    - branches
   needs:
     - test-backend
     - semgrep-scan
     - sonarqube-scan
+  script:
+    - |
+      BACKEND_TAG=$(echo "${BACKEND_IMAGE}" | tr '[:upper:]' '[:lower:]')
+      docker build -t "${BACKEND_TAG}" ${BACKEND_DIR}/
+      if [ -n "${HARBOR_URL}" ] && [ -n "${HARBOR_USER}" ] && [ -n "${HARBOR_PASSWORD}" ]; then
+        echo "Pushing backend image to Harbor: ${BACKEND_TAG}"
+        echo "${HARBOR_PASSWORD}" | docker login -u "${HARBOR_USER}" --password-stdin "${HARBOR_URL}"
+        docker push "${BACKEND_TAG}"
+        # Also tag as branch name
+        BRANCH_TAG="${HARBOR_URL}/${HARBOR_PROJECT}/backend:${CI_COMMIT_REF_SLUG}"
+        docker tag "${BACKEND_TAG}" "${BRANCH_TAG}"
+        docker push "${BRANCH_TAG}"
+        # Tag as latest on main
+        if [ "${CI_COMMIT_BRANCH}" = "main" ]; then
+          LATEST_TAG="${HARBOR_URL}/${HARBOR_PROJECT}/backend:latest"
+          docker tag "${BACKEND_TAG}" "${LATEST_TAG}"
+          docker push "${LATEST_TAG}"
+        fi
+      else
+        echo "HARBOR_URL/HARBOR_USER/HARBOR_PASSWORD not set; image built locally only."
+      fi
 
-# Manual k8s deploy (requires KUBE_CONFIG)
+docker-build-ai:
+  image: docker:24
+  stage: build
+  <<: *rules-push-only
+  services:
+    - name: docker:24-dind
+  needs:
+    - test-backend
+    - semgrep-scan
+  script:
+    - |
+      AI_TAG=$(echo "${AI_IMAGE}" | tr '[:upper:]' '[:lower:]')
+      docker build -t "${AI_TAG}" AI/
+      if [ -n "${HARBOR_URL}" ] && [ -n "${HARBOR_USER}" ] && [ -n "${HARBOR_PASSWORD}" ]; then
+        echo "Pushing AI image to Harbor: ${AI_TAG}"
+        echo "${HARBOR_PASSWORD}" | docker login -u "${HARBOR_USER}" --password-stdin "${HARBOR_URL}"
+        docker push "${AI_TAG}"
+        BRANCH_TAG="${HARBOR_URL}/${HARBOR_PROJECT}/ai:${CI_COMMIT_REF_SLUG}"
+        docker tag "${AI_TAG}" "${BRANCH_TAG}"
+        docker push "${BRANCH_TAG}"
+        if [ "${CI_COMMIT_BRANCH}" = "main" ]; then
+          LATEST_TAG="${HARBOR_URL}/${HARBOR_PROJECT}/ai:latest"
+          docker tag "${AI_TAG}" "${LATEST_TAG}"
+          docker push "${LATEST_TAG}"
+        fi
+      else
+        echo "HARBOR_URL/HARBOR_USER/HARBOR_PASSWORD not set; image built locally only."
+      fi
+
+# ─── GitOps: update kustomize image tags and commit back ─────────────────────
+update-gitops:
+  image: alpine/git:latest
+  stage: gitops
+  <<: *rules-push-only
+  needs:
+    - docker-build-backend
+    - docker-build-ai
+  before_script:
+    - apk add --no-cache curl bash
+    - curl -sL
+      "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"
+      | bash
+    - mv kustomize /usr/local/bin/
+    - git config --global user.name  "gitlab-ci[bot]"
+    - git config --global user.email "gitlab-ci[bot]@noreply.gitlab.com"
+  script:
+    - |
+      # Choose overlay based on branch
+      if [ "${CI_COMMIT_BRANCH}" = "main" ]; then
+        OVERLAY="k8s/overlays/production"
+        COMMIT_MSG="chore(gitops): deploy production @ ${CI_COMMIT_SHORT_SHA} [skip ci]"
+      else
+        OVERLAY="k8s/overlays/staging"
+        COMMIT_MSG="chore(gitops): deploy staging @ ${CI_COMMIT_SHORT_SHA} [skip ci]"
+      fi
+
+      # Update image tags in the overlay
+      cd "${OVERLAY}"
+      kustomize edit set image \
+        health-backend="${HARBOR_URL}/${HARBOR_PROJECT}/backend:${CI_COMMIT_SHORT_SHA}" \
+        health-ai="${HARBOR_URL}/${HARBOR_PROJECT}/ai:${CI_COMMIT_SHORT_SHA}"
+      cd "${CI_PROJECT_DIR}"
+
+      # Commit and push if anything changed
+      git add "${OVERLAY}/kustomization.yaml"
+      git diff --staged --quiet && echo "No manifest changes; skipping commit." && exit 0
+      git remote set-url origin "https://oauth2:${GITOPS_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git"
+      git commit -m "${COMMIT_MSG}"
+      git push origin HEAD:${CI_COMMIT_BRANCH}
+  variables:
+    GIT_STRATEGY: clone
+
+# ─── ArgoCD Sync (automatic after gitops update) ─────────────────────────────
+argocd-sync:
+  image: quay.io/argoproj/argocd:v2.11.0
+  stage: deploy
+  <<: *rules-push-only
+  needs:
+    - update-gitops
+  script:
+    - |
+      if [ -z "${ARGOCD_SERVER}" ] || [ -z "${ARGOCD_AUTH_TOKEN}" ]; then
+        echo "ARGOCD_SERVER or ARGOCD_AUTH_TOKEN not set; ArgoCD auto-sync is configured and will pick up the commit automatically."
+        exit 0
+      fi
+
+      argocd login "${ARGOCD_SERVER}" --auth-token "${ARGOCD_AUTH_TOKEN}" --grpc-web --insecure
+
+      if [ "${CI_COMMIT_BRANCH}" = "main" ]; then
+        APPS="health-backend-production health-ai-production"
+      else
+        APPS="health-backend-staging"
+      fi
+
+      for APP in ${APPS}; do
+        echo "Syncing ArgoCD application: ${APP}"
+        argocd app sync "${APP}" --grpc-web --timeout 120 || true
+        argocd app wait "${APP}" --health --grpc-web --timeout 180 || true
+      done
+
+# ─── Legacy manual k8s deploy (kept for direct kubectl access if needed) ──────
 deploy-k8s:
   image: alpine:3.18
   stage: deploy
   when: manual
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+      when: never
+    - if: $CI_COMMIT_BRANCH == 'main'
+      when: manual
   before_script:
     - apk add --no-cache curl ca-certificates
     - KUBECTL_VERSION="1.27.0"
@@ -124,34 +262,35 @@ deploy-k8s:
         exit 0
       fi
       mkdir -p ~/.kube
-      echo "$KUBE_CONFIG" > ~/.kube/config
-      sed -e "s|REPLACE_IMAGE|${IMAGE_TAG}|g" k8s/ci/backend-deployment.yaml | kubectl apply -f -
+      echo "$KUBE_CONFIG" | base64 -d > ~/.kube/config
+      sed -e "s|REPLACE_IMAGE|${BACKEND_IMAGE}|g" k8s/ci/backend-deployment.yaml | kubectl apply -f -
       kubectl apply -f k8s/ci/backend-service.yaml
-  only:
-    - branches
 
-# Verify deployment by running a short smoke test inside the cluster (requires KUBE_CONFIG)
+# ─── Smoke test via ArgoCD health check ──────────────────────────────────────
 smoke-test:
-  image: alpine:3.18
+  image: quay.io/argoproj/argocd:v2.11.0
   stage: verify
-  before_script:
-    - apk add --no-cache curl ca-certificates
-    - KUBECTL_VERSION="1.27.0"
-    - curl -L --fail -o /usr/local/bin/kubectl
-      "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl"
-    - chmod +x /usr/local/bin/kubectl
+  <<: *rules-push-only
+  when: manual
+  needs:
+    - argocd-sync
   script:
     - |
-      if [ -z "$KUBE_CONFIG" ]; then
-        echo "KUBE_CONFIG not set; skipping smoke-test"
+      if [ -z "${ARGOCD_SERVER}" ] || [ -z "${ARGOCD_AUTH_TOKEN}" ]; then
+        echo "ARGOCD_SERVER or ARGOCD_AUTH_TOKEN not set; skipping smoke-test."
         exit 0
       fi
-      mkdir -p ~/.kube
-      echo "$KUBE_CONFIG" > ~/.kube/config
-      kubectl -n health run --rm --restart=Never --image=curlimages/curl curl-test -- /bin/sh -c "curl -sSf http://health-backend:5001/api/health"
-  only:
-    - branches
-  when: manual
+      argocd login "${ARGOCD_SERVER}" --auth-token "${ARGOCD_AUTH_TOKEN}" --grpc-web --insecure
+
+      if [ "${CI_COMMIT_BRANCH}" = "main" ]; then
+        APP="health-backend-production"
+      else
+        APP="health-backend-staging"
+      fi
+
+      echo "Checking health of ${APP}..."
+      argocd app wait "${APP}" --health --grpc-web --timeout 300
+      echo "✓ ${APP} is healthy"
 
 # DAST (Dynamic Application Security Testing) scan
 security-dast:
@@ -203,12 +342,14 @@ security-dast:
       - /zap/report_html.html
       - /zap/report_json.json
     expire_in: 1 week
-  only:
-    - develop
-    - main
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+      when: never
+    - if: $CI_COMMIT_BRANCH == 'main'
+    - if: $CI_COMMIT_BRANCH == 'develop'
   allow_failure: true
 
-# Deploy monitoring (Prometheus + Grafana) - manual and only on main
+# ─── Deploy monitoring (Prometheus + Grafana) ─────────────────────────────────
 deploy-monitoring:
   image: alpine:3.18
   stage: deploy
@@ -232,5 +373,8 @@ deploy-monitoring:
       echo "Configured Kubernetes API server: ${SERVER:-(unknown)}"
       kubectl -n monitoring apply -f k8s/monitoring/prometheus.yaml || { echo "kubectl apply prometheus failed; cluster may be unreachable"; exit 1; }
       kubectl -n monitoring apply -f k8s/monitoring/grafana.yaml || { echo "kubectl apply grafana failed; cluster may be unreachable"; exit 1; }
-  only:
-    - main
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+      when: never
+    - if: $CI_COMMIT_BRANCH == 'main'
+      when: manual

@@ -1,8 +1,0 @@
-== semgrep --version ==
-zsh: command not found: semgrep
-
-== semgrep scan (slow, may take ~30s) ==
-zsh: command not found: semgrep
-
-== summary: count findings ==
-semgrep results not available: [Errno 2] No such file or directory: 'pipeline-logs/semgrep-results.json'

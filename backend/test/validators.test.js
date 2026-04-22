@@ -2,7 +2,7 @@
 import('joi').then(() => { }).catch(() => { });  // Pre-load for jest
 
 // Import using dynamic import (works with babel transformation)
-const { signupSchema, loginSchema, waterLogSchema, mealLogSchema, workoutSchema } = require('../src/lib/validators.js');
+const { signupSchema, loginSchema, waterLogSchema, mealSchema, workoutSchema } = require('../src/lib/validators.js');
 
 describe('Validators Module', () => {
     describe('signupSchema', () => {
@@ -39,7 +39,7 @@ describe('Validators Module', () => {
 
             const { error } = signupSchema.validate(data);
             expect(error).toBeDefined();
-            expect(error.message).toContain('password');
+            expect(error.message).toContain('Password');
         });
 
         it('should require email', async () => {
@@ -87,17 +87,17 @@ describe('Validators Module', () => {
     describe('waterLogSchema', () => {
         it('should validate water intake in range 1-5000ml', async () => {
             const data = {
-                amount: 500,
+                amountMl: 500,
             };
 
             const { error, value } = waterLogSchema.validate(data);
             expect(error).toBeUndefined();
-            expect(value.amount).toBe(500);
+            expect(value.amountMl).toBe(500);
         });
 
         it('should reject amount less than 1ml', async () => {
             const data = {
-                amount: 0,
+                amountMl: 0,
             };
 
             const { error } = waterLogSchema.validate(data);
@@ -106,7 +106,7 @@ describe('Validators Module', () => {
 
         it('should reject amount greater than 5000ml', async () => {
             const data = {
-                amount: 5001,
+                amountMl: 5001,
             };
 
             const { error } = waterLogSchema.validate(data);
@@ -115,7 +115,7 @@ describe('Validators Module', () => {
 
         it('should reject non-numeric amount', async () => {
             const data = {
-                amount: 'not-a-number',
+                amountMl: 'not-a-number',
             };
 
             const { error } = waterLogSchema.validate(data);
@@ -126,35 +126,36 @@ describe('Validators Module', () => {
     describe('mealLogSchema', () => {
         it('should validate correct meal data', async () => {
             const data = {
-                foodName: 'Apple',
+                name: 'Apple',
                 calories: 95,
                 protein: 0.5,
                 carbs: 25,
                 fat: 0.3,
             };
 
-            const { error, value } = mealLogSchema.validate(data);
+            const { error, value } = mealSchema.validate(data);
             expect(error).toBeUndefined();
-            expect(value.foodName).toBe('Apple');
+            expect(value.name).toBe('Apple');
         });
 
         it('should allow optional nutritional values', async () => {
             const data = {
-                foodName: 'Chicken',
+                name: 'Chicken',
+                calories: 200,
             };
 
-            const { error, value } = mealLogSchema.validate(data);
+            const { error, value } = mealSchema.validate(data);
             expect(error).toBeUndefined();
-            expect(value.foodName).toBe('Chicken');
+            expect(value.name).toBe('Chicken');
         });
 
         it('should reject negative calories', async () => {
             const data = {
-                foodName: 'Apple',
+                name: 'Apple',
                 calories: -100,
             };
 
-            const { error } = mealLogSchema.validate(data);
+            const { error } = mealSchema.validate(data);
             expect(error).toBeDefined();
         });
     });
@@ -164,7 +165,7 @@ describe('Validators Module', () => {
             const data = {
                 type: 'Running',
                 duration: 30,
-                calories: 300,
+                caloriesBurned: 300,
             };
 
             const { error, value } = workoutSchema.validate(data);

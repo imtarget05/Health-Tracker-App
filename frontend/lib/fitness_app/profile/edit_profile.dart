@@ -637,7 +637,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               },
               trailing: _savedFlags['sleepHours'] == true ? const Text('Saved', style: TextStyle(color: Colors.green, fontSize: 12)) : null,
             ),
-            }),
             ListTile(
               title: const Text('Favourite exercise'),
               subtitle: Text(exercise ?? '—'),

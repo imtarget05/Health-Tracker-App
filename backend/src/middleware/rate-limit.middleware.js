@@ -1,4 +1,6 @@
-import rateLimit from 'express-rate-limit';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
+
+const getUserOrIpKey = (req) => req.user?.uid || ipKeyGenerator(req.ip);
 
 /**
  * Rate limiting middleware for different endpoints
@@ -23,8 +25,8 @@ export const uploadLimiter = rateLimit({
     max: 10,
     message: 'Too many uploads, please try again tomorrow',
     keyGenerator: (req, res) => {
-        // Use user ID if authenticated, otherwise IP
-        return req.user?.uid || req.ip;
+        // Use user ID if authenticated, otherwise normalized IP (IPv6-safe)
+        return getUserOrIpKey(req);
     },
 });
 
@@ -34,7 +36,7 @@ export const aiChatLimiter = rateLimit({
     max: 50,
     message: 'Too many AI requests today, please try again tomorrow',
     keyGenerator: (req, res) => {
-        return req.user?.uid || req.ip;
+        return getUserOrIpKey(req);
     },
 });
 
@@ -43,7 +45,7 @@ export const generalLimiter = rateLimit({
     windowMs: 60 * 1000, // 1 minute
     max: 100,
     keyGenerator: (req, res) => {
-        return req.user?.uid || req.ip;
+        return getUserOrIpKey(req);
     },
 });
 

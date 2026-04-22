@@ -5,6 +5,8 @@ metadata:
   namespace: health
   labels:
     app: health-backend
+    app.kubernetes.io/name: health-backend
+    app.kubernetes.io/component: backend
 spec:
   selector:
     app: health-backend

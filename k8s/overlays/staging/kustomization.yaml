@@ -1,0 +1,45 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Pull in both service bases
+resources:
+  - ../../base/backend
+  - ../../base/ai
+
+namespace: health-staging
+
+# Staging-specific patches: single replica, lower resource limits
+patches:
+  - target:
+      kind: Deployment
+      name: health-backend
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/cpu
+        value: "300m"
+      - op: replace
+        path: /spec/template/spec/containers/0/resources/limits/memory
+        value: "256Mi"
+  - target:
+      kind: Deployment
+      name: health-ai
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 1
+
+# Image tags are updated here by CI via: kustomize edit set image
+# Example after CI runs:
+#   health-backend=harbor.example.com/health-tracker/backend:abc1234
+#   health-ai=harbor.example.com/health-tracker/ai:abc1234
+images:
+  - name: health-backend
+    newTag: latest
+  - name: health-ai
+    newTag: latest
+
+commonLabels:
+  environment: staging

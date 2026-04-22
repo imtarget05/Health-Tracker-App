@@ -1,6 +1,5 @@
 import pino from 'pino';
 import pinoHttp from 'pino-http';
-import { logger } from './logger.js';
 
 export class MetricsService {
   constructor() {

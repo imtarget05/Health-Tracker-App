@@ -14,11 +14,13 @@ import '../fitness_app_theme.dart';
 import 'package:best_flutter_ui_templates/fitness_app/notification/Chatbox/providers/chat_provider.dart';
 import 'package:best_flutter_ui_templates/fitness_app/notification/Chatbox/providers/settings_provider.dart';
 import 'package:best_flutter_ui_templates/fitness_app/notification/Chatbox/screens/home_screen.dart';
+import 'dart:async';
 import 'dart:convert';
 import 'package:best_flutter_ui_templates/services/notification_service.dart';
 import 'package:best_flutter_ui_templates/services/auth_storage.dart';
 import 'package:http/http.dart' as http;
 import 'package:best_flutter_ui_templates/services/backend_api.dart';
+import 'package:best_flutter_ui_templates/services/event_bus.dart';
 import 'package:provider/provider.dart';
 
 // Dialog that lists common notification types for emit testing

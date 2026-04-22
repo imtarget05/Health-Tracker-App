@@ -16,7 +16,6 @@ import workoutRoutes from "./routes/workout.route.js";
 
 import { firebasePromise } from "./lib/firebase.js";
 import { startSchedulers } from './notifications/notification.scheduler.js';
-import { logger } from "./lib/logger.js";
 
 dotenv.config();
 
@@ -49,15 +48,15 @@ app.get("/metrics", (req, res) => {
 // Request latency tracking middleware (must be early)
 app.use((req, res, next) => {
     req.startTime = Date.now();
-    
+
     // Track response
     const originalSend = res.send;
-    res.send = function(data) {
+    res.send = function (data) {
         const duration = Date.now() - req.startTime;
         metricsService.recordHttpRequest(req.method, req.path, res.statusCode, duration);
         originalSend.call(this, data);
     };
-    
+
     next();
 });
 // ===== END PHASE 4 Metrics =====
@@ -212,9 +211,9 @@ const AppError = class extends Error {
 app.use((err, req, res, next) => {
     const statusCode = err.statusCode || err.status || 500;
     const message = err.message || 'Internal server error';
-    
+
     // Log error with context
-    logger.error('[ERROR HANDLER]', {
+    console.error('[ERROR HANDLER]', {
         statusCode,
         message,
         path: req.path,
@@ -223,10 +222,10 @@ app.use((err, req, res, next) => {
         ip: req.ip,
         stack: err.stack,
     });
-    
+
     // Record error metric
     metricsService.recordError(err.name || 'UnknownError');
-    
+
     res.status(statusCode).json({
         success: false,
         message,

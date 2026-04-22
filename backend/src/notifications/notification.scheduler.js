@@ -200,8 +200,9 @@ export const startNotificationSchedulers = () => {
                     const [ph, pm] = pref.split(':').map(Number);
                     const prefDate = new Date(now);
                     prefDate.setHours(ph, pm, 0, 0);
-                    const diff = Math.abs(now.getTime() - prefDate.getTime());
-                    if (diff > 5 * 60 * 1000) return; // outside 5-minute window
+                    // check if now is strictly within [prefDate, prefDate + 5 mins)
+                    const diff = now.getTime() - prefDate.getTime();
+                    if (diff < 0 || diff >= 5 * 60 * 1000) return; // outside 5-minute window
 
                     const dateStr = now.toISOString().slice(0, 10);
                     const workoutsToday = await db.collection('workouts')

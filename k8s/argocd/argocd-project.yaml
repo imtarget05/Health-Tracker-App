@@ -1,0 +1,51 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: health-tracker
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.io
+spec:
+  description: Health Tracker App — backend, AI service
+
+  # Only allow deployments from this git repository
+  sourceRepos:
+    - https://gitlab.com/YOUR_GROUP/health-tracker-app.git # replace with your repo URL
+
+  # Only allow deploying to these namespaces
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: health
+    - server: https://kubernetes.default.svc
+      namespace: health-staging
+
+  # Restrict which Kubernetes resources can be managed
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+
+  namespaceResourceWhitelist:
+    - group: "apps"
+      kind: Deployment
+    - group: ""
+      kind: Service
+    - group: ""
+      kind: ConfigMap
+    - group: ""
+      kind: ServiceAccount
+
+  # Deny all other cluster-scoped resource types
+  clusterResourceBlacklist:
+    - group: ""
+      kind: ResourceQuota
+    - group: ""
+      kind: LimitRange
+
+  roles:
+    - name: ci-deployer
+      description: Role for CI pipeline to trigger sync
+      policies:
+        - p, proj:health-tracker:ci-deployer, applications, sync,
+          health-tracker/*, allow
+        - p, proj:health-tracker:ci-deployer, applications,
+          get,  health-tracker/*, allow

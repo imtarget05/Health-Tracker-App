@@ -1,0 +1,39 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+# Pull in both service bases
+resources:
+  - ../../base/backend
+  - ../../base/ai
+
+namespace: health
+
+# Production-specific patches: HA replicas, full resource limits
+patches:
+  - target:
+      kind: Deployment
+      name: health-backend
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
+  - target:
+      kind: Deployment
+      name: health-ai
+    patch: |-
+      - op: replace
+        path: /spec/replicas
+        value: 2
+
+# Image tags are updated here by CI via: kustomize edit set image
+# Example after CI runs:
+#   health-backend=harbor.example.com/health-tracker/backend:abc1234
+#   health-ai=harbor.example.com/health-tracker/ai:abc1234
+images:
+  - name: health-backend
+    newTag: latest
+  - name: health-ai
+    newTag: latest
+
+commonLabels:
+  environment: production

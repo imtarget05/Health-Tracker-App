@@ -92,7 +92,7 @@ class CertificatePinning {
   }
 
   /// Check if we are in development/testing mode
-  static bool isDevMode => kDebugMode;
+  static bool get isDevMode => kDebugMode;
 }
 
 /// Custom HTTP client with certificate pinning
@@ -112,8 +112,8 @@ class PinnedHttpClient extends http.BaseClient {
 
     if (request is http.Request) {
       stream.add(request.bodyBytes);
-    } else if (request is http.StreamRequest) {
-      await stream.addStream(request.stream);
+    } else if (request is http.StreamedRequest) {
+      await stream.addStream(request.finalize());
     }
 
     final response = await stream.close();
