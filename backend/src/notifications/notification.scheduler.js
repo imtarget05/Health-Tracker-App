@@ -184,7 +184,7 @@ export const startNotificationSchedulers = () => {
         const users = [];
         snap.forEach(doc => {
             const data = doc.data();
-            if (data.userId && data.workout && data.workout.enabled && data.workout.preferredTime) {
+            if (data.userId && data.workout?.enabled && data.workout?.preferredTime) {
                 users.push({ userId: data.userId, workout: data.workout });
             }
         });
@@ -262,14 +262,37 @@ export const startNotificationSchedulers = () => {
     console.log("✅ Notification schedulers started");
 };
 
-// add a single ESM export that starts both schedulers
+// Store cron jobs for cleanup on shutdown
+const cronJobs = [];
 
+// add a single ESM export that starts both schedulers
 export function startSchedulers() {
     // start per-user workout reminder and daily summary schedulers
     try {
-        if (typeof startNotificationSchedulers === 'function') startNotificationSchedulers();
+        if (typeof startNotificationSchedulers === 'function') {
+            startNotificationSchedulers();
+            console.log('[SCHEDULER] All notification schedulers initialized successfully');
+        }
+        
+        // Register cleanup on global shutdown
+        globalThis.shutdownTasks = async () => {
+            console.log('[SCHEDULER] Stopping all cron jobs...');
+            // Stop all node-cron tasks
+            if (cron && typeof cron.getTasks === 'function') {
+                const tasks = cron.getTasks();
+                for (const task of tasks) {
+                    try {
+                        task.stop();
+                    } catch (e) {
+                        console.error('[SCHEDULER] Error stopping cron job:', e);
+                    }
+                }
+            }
+            console.log('[SCHEDULER] All cron jobs stopped');
+        };
     } catch (e) {
-        console.error('startSchedulers failed', e);
+        console.error('[SCHEDULER] Failed to initialize schedulers:', e && (e.message || e));
+        throw e; // Let caller handle initialization failure
     }
 }
 

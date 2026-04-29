@@ -8,9 +8,8 @@ class ApiClient {
   ApiClient._();
   static final ApiClient instance = ApiClient._();
 
-  // Configure base URL via env or fallback
-  // For web debug, you may need your machine IP for device emulators.
-  static final String _baseUrl = dotenv.env['BACKEND_URL'] ?? 'http://localhost:8080';
+  // Configure base URL via env or fallback. Must match BASE_API_URL used by BackendApi.
+  static final String _baseUrl = dotenv.env['BACKEND_URL'] ?? dotenv.env['BASE_API_URL'] ?? 'http://localhost:5001';
 
   // ✅ NEW: HTTP client with certificate pinning
   static late http.Client _httpClient = _initHttpClient();

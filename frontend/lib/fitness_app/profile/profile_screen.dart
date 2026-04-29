@@ -85,7 +85,8 @@ class _ProfileScreenState extends State<ProfileScreen> with TickerProviderStateM
 
   @override
   void dispose() {
-  _scrollController.dispose();
+    _scrollController.removeListener(_scrollControllerListenerSetup);
+    _scrollController.dispose();
     if (widget.animationController == null) _controller.dispose();
     super.dispose();
   }

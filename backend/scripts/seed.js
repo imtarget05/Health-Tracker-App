@@ -1,12 +1,20 @@
 #!/usr/bin/env node
 import { firebasePromise, getDb } from "../src/lib/firebase.js";
+import dotenv from "dotenv";
+
+// Load environment variables from .env.test if using emulator
+if (process.env.USE_FIREBASE_EMULATOR === "1") {
+  dotenv.config({ path: './.env.test' });
+} else {
+  dotenv.config();
+}
 
 const run = async () => {
   // Safety: detect emulator vs real project. Require explicit confirmation to seed real project.
   const isEmulator = !!process.env.FIRESTORE_EMULATOR_HOST || process.env.USE_FIREBASE_EMULATOR === "1";
   // If user requested emulator but didn't set host, default to localhost:8080
   if (process.env.USE_FIREBASE_EMULATOR === "1" && !process.env.FIRESTORE_EMULATOR_HOST) {
-    process.env.FIRESTORE_EMULATOR_HOST = "localhost:8080";
+    process.env.FIRESTORE_EMULATOR_HOST = "127.0.0.1:8081";
   }
   if (!isEmulator && process.env.CONFIRM_SEED !== "1") {
     console.warn("\n⚠️  Seed script will write to the configured Firebase project (not emulator).");

@@ -1,5 +1,4 @@
-import admin from 'firebase-admin';
-import { db } from '../lib/firebase.js';
+import { getDb } from '../lib/firebase.js';
 import { sendPushToUser } from '../notifications/notification.service.js';
 import { NotificationType } from '../notifications/notification.templates.js';
 
@@ -10,7 +9,7 @@ function toDate(value) {
   if (!value) return null;
   if (typeof value.toDate === 'function') return value.toDate();
   const d = new Date(value);
-  return isNaN(d.getTime()) ? null : d;
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 /**
@@ -19,7 +18,7 @@ function toDate(value) {
 export async function computeStreakDays(userId) {
   if (!userId) return null;
   try {
-    const q = await db.collection('workouts')
+    const q = await getDb().collection('workouts')
       .where('userId', '==', userId)
       .orderBy('createdAt', 'desc')
       .limit(1)
@@ -45,7 +44,7 @@ export async function recentlySentReminder(userId, types = [], windowHours = 48)
   try {
     const cutoff = new Date(Date.now() - windowHours * 60 * 60 * 1000).toISOString();
     // Try sentAt then createdAt fields
-    const snap = await db.collection('notifications')
+    const snap = await getDb().collection('notifications')
       .where('userId', '==', userId)
       .where('type', 'in', types)
       .where('createdAt', '>=', cutoff)
@@ -75,14 +74,10 @@ export async function sendStreakReminderIfNeeded(userId) {
     const already = await recentlySentReminder(userId, typesToCheck, 48);
     if (already) return;
 
-    let title, body, nType;
+    let nType;
     if (missedDays >= 5) {
-      title = '💪 Chúng ta cùng cố gắng nào!';
-      body = `Bạn đã bỏ ${missedDays} ngày. Bắt đầu lại với 15-20 phút hôm nay nhé.`;
       nType = strongType;
     } else if (missedDays >= 2) {
-      title = '🧭 Nhắc nhẹ: quay lại luyện tập';
-      body = `Bạn đã bỏ ${missedDays} ngày. Hôm nay thử 15-20 phút nhé — bạn làm được!`;
       nType = lightType;
     } else {
       return;
@@ -107,12 +102,12 @@ export async function runWorkoutReminderPass() {
     const now = new Date();
     const nowHHMM = now.toTimeString().slice(0, 5); // "HH:MM"
     // paginate through profiles in small batches (limit simple for dev)
-    const snap = await db.collection('profiles').limit(500).get();
+    const snap = await getDb().collection('profiles').limit(500).get();
     for (const doc of snap.docs) {
       const userId = doc.id;
       const profile = doc.data() || {};
       const w = profile.workout;
-      if (!w || !w.enabled) continue;
+      if (!w?.enabled) continue;
       const preferred = w.preferredTime;
       if (!preferred) continue;
       if (preferred !== nowHHMM) continue;
@@ -120,7 +115,7 @@ export async function runWorkoutReminderPass() {
       // skip if user already logged workout today
       const start = new Date(); start.setHours(0, 0, 0, 0);
       const end = new Date(start); end.setDate(end.getDate() + 1);
-      const q = await db.collection('workouts')
+      const q = await getDb().collection('workouts')
         .where('userId', '==', userId)
         .where('createdAt', '>=', start.toISOString())
         .where('createdAt', '<', end.toISOString())
@@ -145,31 +140,31 @@ async function getDailyTotals(userId, date = new Date()) {
   const totals = { mealsKcal: 0, waterMl: 0, workoutsCalories: 0, workoutsMinutes: 0 };
 
   try {
-    const mealsQ = await db.collection('meals')
+    const mealsQ = await getDb().collection('meals')
       .where('userId', '==', userId)
       .where('createdAt', '>=', start.toISOString())
       .where('createdAt', '<', end.toISOString())
       .get();
     mealsQ.forEach(d => { const m = d.data(); totals.mealsKcal += (m.kcal || 0); });
-  } catch (e) { /* ignore */ }
+  } catch (e) { console.warn('getDailyTotals meals error', e); }
 
   try {
-    const waterQ = await db.collection('water')
+    const waterQ = await getDb().collection('water')
       .where('userId', '==', userId)
       .where('createdAt', '>=', start.toISOString())
       .where('createdAt', '<', end.toISOString())
       .get();
     waterQ.forEach(d => { const w = d.data(); totals.waterMl += (w.amountMl || 0); });
-  } catch (e) { /* ignore */ }
+  } catch (e) { console.warn('getDailyTotals water error', e); }
 
   try {
-    const wQ = await db.collection('workouts')
+    const wQ = await getDb().collection('workouts')
       .where('userId', '==', userId)
       .where('createdAt', '>=', start.toISOString())
       .where('createdAt', '<', end.toISOString())
       .get();
     wQ.forEach(d => { const w = d.data(); totals.workoutsCalories += (w.caloriesBurned || 0); totals.workoutsMinutes += (w.duration || 0); });
-  } catch (e) { /* ignore */ }
+  } catch (e) { console.warn('getDailyTotals workouts error', e); }
 
   return totals;
 }
@@ -187,11 +182,11 @@ export async function runDailySummaryPass() {
     if (_dailyLastRun === today) return;
     _dailyLastRun = today;
 
-    const usersSnap = await db.collection('users').get();
+    const usersSnap = await getDb().collection('users').get();
     for (const u of usersSnap.docs) {
       const userId = u.id;
       const totals = await getDailyTotals(userId, new Date());
-      const body = `Ăn: ${totals.mealsKcal} kcal\nTập: -${totals.workoutsCalories} kcal\nNet: ${totals.mealsKcal - totals.workoutsCalories} kcal\nNước: ${(Math.round(totals.waterMl / 100) / 10)} L`;
+
       await sendPushToUser({
         userId,
         type: NotificationType.DAILY_SUMMARY,
@@ -212,14 +207,44 @@ export async function runDailySummaryPass() {
 
 export function startWorkoutReminderScheduler(intervalMs = 60 * 1000) {
   if (_workoutInterval) return;
-  runWorkoutReminderPass().catch(() => { });
-  _workoutInterval = setInterval(() => runWorkoutReminderPass().catch(() => { }), intervalMs);
+  runWorkoutReminderPass().catch(err => {
+    console.error('[WORKOUT SCHEDULER] Initial pass failed:', err);
+  });
+  _workoutInterval = setInterval(() => {
+    runWorkoutReminderPass().catch(err => {
+      console.error('[WORKOUT SCHEDULER] Pass failed:', err);
+    });
+  }, intervalMs);
+  console.log('[WORKOUT SCHEDULER] Started with interval:', intervalMs);
 }
 
 export function startDailySummaryScheduler(intervalMs = 60 * 1000) {
   if (_dailyInterval) return;
-  runDailySummaryPass().catch(() => { });
-  _dailyInterval = setInterval(() => runDailySummaryPass().catch(() => { }), intervalMs);
+  runDailySummaryPass().catch(err => {
+    console.error('[DAILY SUMMARY SCHEDULER] Initial pass failed:', err);
+  });
+  _dailyInterval = setInterval(() => {
+    runDailySummaryPass().catch(err => {
+      console.error('[DAILY SUMMARY SCHEDULER] Pass failed:', err);
+    });
+  }, intervalMs);
+  console.log('[DAILY SUMMARY SCHEDULER] Started with interval:', intervalMs);
+}
+
+export function stopWorkoutReminderScheduler() {
+  if (_workoutInterval) {
+    clearInterval(_workoutInterval);
+    _workoutInterval = null;
+    console.log('[WORKOUT SCHEDULER] Stopped');
+  }
+}
+
+export function stopDailySummaryScheduler() {
+  if (_dailyInterval) {
+    clearInterval(_dailyInterval);
+    _dailyInterval = null;
+    console.log('[DAILY SUMMARY SCHEDULER] Stopped');
+  }
 }
 
 /**
@@ -227,13 +252,13 @@ export function startDailySummaryScheduler(intervalMs = 60 * 1000) {
  */
 export async function createWorkout(req, res) {
   try {
-    const userId = req.user && req.user.uid;
+    const userId = req.user?.uid;
     if (!userId) return res.status(401).json({ message: 'Unauthorized' });
     const { type = 'cardio', duration = 0, caloriesBurned = 0 } = req.body;
     const now = new Date().toISOString();
     const payload = { userId, type, duration: Number(duration), caloriesBurned: Number(caloriesBurned), createdAt: now };
 
-    const ref = await db.collection('workouts').add(payload);
+    const ref = await getDb().collection('workouts').add(payload);
 
     // send completion notification (non-blocking)
     sendPushToUser({

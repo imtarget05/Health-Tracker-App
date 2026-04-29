@@ -226,4 +226,28 @@ class ProfileSyncService {
     }
     queueCount.value = _box!.length;
   }
+
+  /// Cleanup resources (stream subscriptions, etc.)
+  /// Call this when the app is shutting down or when the service is no longer needed
+  Future<void> dispose() async {
+    try {
+      // Cancel auth state change listener
+      if (_authSub != null) {
+        await _authSub!.cancel();
+        _authSub = null;
+        debugPrint('ProfileSync: auth subscription cancelled');
+      }
+      
+      // Close Hive box if it was opened
+      if (_box != null && _box!.isOpen) {
+        await _box!.close();
+        _box = null;
+        debugPrint('ProfileSync: Hive box closed');
+      }
+      
+      _initialized = false;
+    } catch (e) {
+      debugPrint('ProfileSync: error during dispose: $e');
+    }
+  }
 }

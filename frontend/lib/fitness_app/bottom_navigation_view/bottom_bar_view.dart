@@ -214,19 +214,35 @@ class TabIcons extends StatefulWidget {
 }
 
 class _TabIconsState extends State<TabIcons> with TickerProviderStateMixin {
+  VoidCallback? _statusListener;
+
   @override
   void initState() {
     widget.tabIconData?.animationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 400),
-    )..addStatusListener((AnimationStatus status) {
-        if (status == AnimationStatus.completed) {
-          if (!mounted) return;
-          widget.removeAllSelect!();
-          widget.tabIconData?.animationController?.reverse();
-        }
-      });
+    );
+    
+    // Store reference to the listener callback for later removal
+    _statusListener = (AnimationStatus status) {
+      if (status == AnimationStatus.completed) {
+        if (!mounted) return;
+        widget.removeAllSelect!();
+        widget.tabIconData?.animationController?.reverse();
+      }
+    };
+    
+    widget.tabIconData?.animationController?.addStatusListener(_statusListener as void Function(AnimationStatus));
     super.initState();
+  }
+
+  @override
+  void dispose() {
+    // Remove status listener
+    if (_statusListener != null && widget.tabIconData?.animationController != null) {
+      widget.tabIconData?.animationController?.removeStatusListener(_statusListener as void Function(AnimationStatus));
+    }
+    super.dispose();
   }
 
   void setAnimation() {

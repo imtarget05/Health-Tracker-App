@@ -37,6 +37,7 @@ class _WaterViewState extends State<WaterView> with TickerProviderStateMixin {
   late DiaryService diaryService;
   StreamSubscription<Diary?>? _diarySub;
   StreamSubscription<User?>? _authSub;
+  VoidCallback? _profileNotifierListener;
 
   void increaseWater() {
     // Use DiaryService transaction to increment water by 100ml
@@ -88,7 +89,7 @@ class _WaterViewState extends State<WaterView> with TickerProviderStateMixin {
   }
   // subscribe to notifier if present so UI updates when reminders change profile
     if (widget.profileNotifier != null) {
-      widget.profileNotifier!.addListener(() {
+      _profileNotifierListener = () {
         if (!mounted) return;
         final p = widget.profileNotifier!.value;
         setState(() {
@@ -97,7 +98,8 @@ class _WaterViewState extends State<WaterView> with TickerProviderStateMixin {
             else if (p['dailyWaterMl'] != null) dailyGoal = (p['dailyWaterMl'] as num).toInt();
           }
         });
-      });
+      };
+      widget.profileNotifier!.addListener(_profileNotifierListener!);
     }
   waterController.forward();
 
@@ -153,7 +155,13 @@ class _WaterViewState extends State<WaterView> with TickerProviderStateMixin {
   void dispose() {
     waterController.dispose();
     _diarySub?.cancel();
-  _authSub?.cancel();
+    _authSub?.cancel();
+    
+    // Remove profile notifier listener
+    if (widget.profileNotifier != null && _profileNotifierListener != null) {
+      widget.profileNotifier!.removeListener(_profileNotifierListener!);
+    }
+    
     super.dispose();
   }
 

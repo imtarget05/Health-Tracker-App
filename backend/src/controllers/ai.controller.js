@@ -36,6 +36,38 @@ const buildSystemPrompt = (user, healthProfile) => {
   );
 };
 
+// Helper: build Gemini contents array from system prompt, history, and current message
+const _buildGeminiContents = (systemPrompt, history, message) => {
+  const contents = [];
+  contents.push({ role: "user", parts: [{ text: systemPrompt }] });
+  if (Array.isArray(history)) {
+    for (const turn of history) {
+      if (!turn?.role || !turn?.content) continue;
+      contents.push({ role: turn.role === "assistant" ? "model" : "user", parts: [{ text: turn.content }] });
+    }
+  }
+  contents.push({ role: "user", parts: [{ text: message }] });
+  return contents;
+};
+
+// Helper: persist AI chat record and optionally send notification
+const _saveChatRecord = async (db, userId, message, replyText) => {
+  const now = new Date();
+  const chatRecord = { userId, message, reply: replyText, model: GEMINI_CHAT_MODEL, createdAt: now, updatedAt: now };
+  if (userId) {
+    await db.collection('profiles').doc(userId).collection('aiChats').add(chatRecord);
+  }
+  await db.collection('aiChats').add(chatRecord);
+  if (userId) {
+    try {
+      const preview = (replyText || '').slice(0, 80);
+      await sendPushToUser({ userId, type: NotificationType.AI_CHAT_REPLY, variables: { preview }, data: { chatPreview: preview }, respectQuietHours: false });
+    } catch (e) {
+      console.warn('Failed to send AI chat notification', e && (e.message || e));
+    }
+  }
+};
+
 export const chatWithAiCoach = async (req, res) => {
   try {
     const { message, history } = req.body;
@@ -63,32 +95,7 @@ export const chatWithAiCoach = async (req, res) => {
     }
 
     const systemPrompt = buildSystemPrompt(user, healthProfile);
-
-    // Xây contents cho Gemini
-    const contents = [];
-
-    // Cho system prompt vào đầu như 1 message user đặc biệt
-    contents.push({
-      role: "user",
-      parts: [{ text: systemPrompt }],
-    });
-
-    // Nếu FE gửi history: [{ role: "user"|"assistant", content: "..." }, ...]
-    if (Array.isArray(history)) {
-      for (const turn of history) {
-        if (!turn || !turn.role || !turn.content) continue;
-        contents.push({
-          role: turn.role === "assistant" ? "model" : "user",
-          parts: [{ text: turn.content }],
-        });
-      }
-    }
-
-    // Tin nhắn hiện tại
-    contents.push({
-      role: "user",
-      parts: [{ text: message }],
-    });
+    const contents = _buildGeminiContents(systemPrompt, history, message);
 
     const response = await gemini.models.generateContent({
       model: GEMINI_CHAT_MODEL,
@@ -97,55 +104,17 @@ export const chatWithAiCoach = async (req, res) => {
 
     const replyText = response.text || "";
 
-    // Save chat turn to Firestore for history/audit
+    // Save chat turn to Firestore for history/audit (non-fatal)
     try {
       await firebasePromise;
       const db = getDb();
       const userId = req.user?.uid || req.user?.userId || null;
-      const now = new Date();
-
-      const chatRecord = {
-        userId,
-        message,
-        reply: replyText,
-        model: GEMINI_CHAT_MODEL,
-        createdAt: now,
-        updatedAt: now,
-      };
-
-      // If user available, store under profiles/{uid}/aiChats for per-user queries
-      if (userId) {
-        const profileRef = db.collection('profiles').doc(userId);
-        const chatsRef = profileRef.collection('aiChats');
-        await chatsRef.add(chatRecord);
-      }
-
-      // Also store a top-level copy for admin/debugging
-      await db.collection('aiChats').add(chatRecord);
-      // If user exists, send a lightweight notification about the reply (non-blocking)
-      if (userId) {
-        try {
-          const preview = (replyText || '').slice(0, 80);
-          await sendPushToUser({
-            userId,
-            type: NotificationType.AI_CHAT_REPLY,
-            variables: { preview },
-            data: { chatPreview: preview },
-            respectQuietHours: false,
-          });
-        } catch (e) {
-          console.warn('Failed to send AI chat notification', e && (e.message || e));
-        }
-      }
+      await _saveChatRecord(db, userId, message, replyText);
     } catch (err) {
       console.error('Failed to persist AI chat record:', err);
-      // non-fatal: continue
     }
 
-    return res.status(200).json({
-      reply: replyText,
-      model: GEMINI_CHAT_MODEL,
-    });
+    return res.status(200).json({ reply: replyText, model: GEMINI_CHAT_MODEL });
   } catch (error) {
     console.error("Error in chatWithAiCoach:", error);
     return res.status(500).json({ message: "AI chat error" });
@@ -160,7 +129,7 @@ export const getAiChatHistory = async (req, res) => {
     }
 
     const userId = user.uid || user.userId;
-    const limit = Math.min(100, parseInt(req.query.limit || '50', 10));
+    const limit = Math.min(100, Number.parseInt(req.query.limit || '50', 10));
 
     await firebasePromise;
     const db = getDb();
@@ -256,13 +225,17 @@ export const deleteAiChatSummary = async (req, res) => {
 
     const profileRef = db.collection('profiles').doc(userId);
     const summariesRef = profileRef.collection('aiChatSummaries');
-    await summariesRef.doc(chatId).delete().catch(() => { });
+    await summariesRef.doc(chatId).delete().catch(err => {
+      console.warn('[AI CONTROLLER] Failed to delete chat summary from profile collection:', err?.message);
+    });
 
     // delete top-level copy if present
     try {
-      await db.collection('aiChatSummaries').doc(chatId + '_' + userId).delete().catch(() => { });
+      await db.collection('aiChatSummaries').doc(chatId + '_' + userId).delete().catch(err => {
+        console.warn('[AI CONTROLLER] Failed to delete top-level chat summary:', err?.message);
+      });
     } catch (e) {
-      // ignore
+      console.error('[AI CONTROLLER] Error during summary deletion:', e);
     }
 
     return res.status(200).json({ ok: true });

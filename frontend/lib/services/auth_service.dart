@@ -1,4 +1,5 @@
 import 'api_client.dart';
+import 'auth_storage.dart';
 
 class AuthService {
   static final AuthService instance = AuthService._();
@@ -21,7 +22,14 @@ class AuthService {
     });
   }
 
+  /// GET /auth/me — requires a valid JWT saved via [AuthStorage.saveToken].
   Future<Map<String, dynamic>> me() async {
-    return ApiClient.instance.get('/auth/me');
+    final token = AuthStorage.token;
+    if (token == null || token.isEmpty) {
+      throw ApiException(401, 'No auth token available. Please log in first.');
+    }
+    return ApiClient.instance.get('/auth/me', headers: {
+      'Authorization': 'Bearer $token',
+    });
   }
 }

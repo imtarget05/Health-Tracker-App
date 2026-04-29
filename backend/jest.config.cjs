@@ -1,3 +1,6 @@
+const dotenv = require('dotenv');
+dotenv.config({ path: './.env.test' });
+
 module.exports = {
     testEnvironment: 'node',
     transform: {
@@ -9,7 +12,7 @@ module.exports = {
     ],
     testPathIgnorePatterns: [
         '/node_modules/',
-        '/\\._',  // Ignore backup/temp files like ._filename.js
+        String.raw`/\._`,  // Ignore backup/temp files like ._filename.js
     ],
     collectCoverageFrom: [
         'src/**/*.js',

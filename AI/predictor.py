@@ -13,6 +13,55 @@ import torch
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+def _center_crop(arr, scale=0.8):
+    """Return a center-cropped view of arr and the (x0, y0) offset."""
+    hh, ww = arr.shape[:2]
+    ch = int(hh * scale)
+    cw = int(ww * scale)
+    y0 = (hh - ch) // 2
+    x0 = (ww - cw) // 2
+    return arr[y0:y0 + ch, x0:x0 + cw], (x0, y0)
+
+
+def _iou(box_a, box_b):
+    """Compute Intersection-over-Union of two axis-aligned bounding boxes."""
+    x_a = max(box_a[0], box_b[0])
+    y_a = max(box_a[1], box_b[1])
+    x_b = min(box_a[2], box_b[2])
+    y_b = min(box_a[3], box_b[3])
+    inter_w = max(0, x_b - x_a)
+    inter_h = max(0, y_b - y_a)
+    inter_area = inter_w * inter_h
+    box_a_area = max(0, box_a[2] - box_a[0]) * max(0, box_a[3] - box_a[1])
+    box_b_area = max(0, box_b[2] - box_b[0]) * max(0, box_b[3] - box_b[1])
+    union = box_a_area + box_b_area - inter_area
+    if union == 0:
+        return 0
+    return inter_area / union
+
+
+def _cluster_detections(all_detections, iou_threshold=0.3):
+    """Merge overlapping detections of the same class, keeping highest confidence."""
+    clusters = []
+    for det in sorted(all_detections, key=lambda x: -x['confidence']):
+        placed = False
+        for cl in clusters:
+            if cl['class_id'] == det['class_id'] and _iou(cl['bbox'], det['bbox']) > iou_threshold:
+                cl['confidence'] = max(cl['confidence'], det['confidence'])
+                cl['bbox'] = [
+                    min(cl['bbox'][0], det['bbox'][0]),
+                    min(cl['bbox'][1], det['bbox'][1]),
+                    max(cl['bbox'][2], det['bbox'][2]),
+                    max(cl['bbox'][3], det['bbox'][3]),
+                ]
+                placed = True
+                break
+        if not placed:
+            clusters.append({'class_id': det['class_id'], 'confidence': det['confidence'], 'bbox': det['bbox']})
+    return clusters
+
+
 class FoodPredictor:
     def __init__(self, models_dir: str = "models"):
         self.models_dir = models_dir
@@ -92,6 +141,49 @@ class FoodPredictor:
         estimated_portion = base_portion * relative_size * scaling_factor
         
         return max(80, min(600, int(estimated_portion)))
+
+    def cleanup_gpu(self) -> None:
+        """Clean up GPU memory after inference"""
+        if self.device == "cuda":
+            try:
+                torch.cuda.empty_cache()
+                logger.info("✅ GPU cache cleared")
+            except Exception as e:
+                logger.warning(f"Could not clear GPU cache: {e}")
+
+    def __del__(self) -> None:
+        """Destructor to ensure GPU cleanup on object deletion"""
+        try:
+            self.cleanup_gpu()
+        except Exception:
+            pass
+
+    def _run_multi_scale_inference(self, image_array_bgr):
+        """Run inference on full image and multiple center crops; return all raw detections."""
+        crops = [{'img': image_array_bgr, 'offset': (0, 0)}]
+        for s in [0.9, 0.8, 0.7]:
+            try:
+                cropped, (ox, oy) = _center_crop(image_array_bgr, scale=s)
+                crops.append({'img': cropped, 'offset': (ox, oy), 'scale': s})
+            except Exception:
+                pass
+        all_detections = []
+        for c in crops:
+            try:
+                results = self.model(c['img'], conf=self.conf_threshold, verbose=False)
+            except Exception as e:
+                logger.warning(f"Model inference failed on crop: {e}")
+                continue
+            boxes = results[0].boxes
+            logger.info(f"🔍 Raw boxes from YOLO (crop): {len(boxes)}")
+            for box in boxes:
+                class_id = int(box.cls[0])
+                confidence = float(box.conf[0])
+                bbox = box.xyxy[0].cpu().numpy()
+                ox, oy = c.get('offset', (0, 0))
+                bbox_adj = [bbox[0] + ox, bbox[1] + oy, bbox[2] + ox, bbox[3] + oy]
+                all_detections.append({'class_id': class_id, 'confidence': confidence, 'bbox': bbox_adj})
+        return all_detections
     
     def _calculate_nutrition(self, category: str, portion_g: int) -> Dict[str, float]:
         """Calculate nutrition values for a given food category and portion"""
@@ -116,130 +208,30 @@ class FoodPredictor:
     def analyze_image(self, image_bytes: bytes) -> Dict[str, Any]:
         """Analyze image and return detailed nutrition information"""
         if not self.model_loaded:
-            return {
-                'success': False,
-                'error': 'Model not loaded',
-                'detections': [],
-                'total_nutrition': {},
-                'items_count': 0
-            }
-        
+            return {'success': False, 'error': 'Model not loaded', 'detections': [], 'total_nutrition': {}, 'items_count': 0}
+
         try:
-            # Convert bytes to PIL image and ensure RGB
             image = Image.open(io.BytesIO(image_bytes))
             if image.mode != 'RGB':
                 image = image.convert('RGB')
 
             image_array = np.array(image)
             image_array_bgr = cv2.cvtColor(image_array, cv2.COLOR_RGB2BGR)
-
-            # Get image dimensions
             h, w = image_array.shape[:2]
             img_area = h * w
 
-            # Multi-crop / multi-scale inference
-            crops = []
-            # full image
-            crops.append({'img': image_array_bgr, 'offset': (0, 0)})
-
-            # center crop 0.8
-            def center_crop(arr, scale=0.8):
-                hh, ww = arr.shape[:2]
-                ch = int(hh * scale)
-                cw = int(ww * scale)
-                y0 = (hh - ch) // 2
-                x0 = (ww - cw) // 2
-                return arr[y0:y0+ch, x0:x0+cw], (x0, y0)
-
-            for s in [0.9, 0.8, 0.7]:
-                try:
-                    cropped, (ox, oy) = center_crop(image_array_bgr, scale=s)
-                    crops.append({'img': cropped, 'offset': (ox, oy), 'scale': s})
-                except Exception:
-                    pass
-
-            all_detections = []
-
-            for c in crops:
-                try:
-                    results = self.model(c['img'], conf=self.conf_threshold, verbose=False)
-                except Exception as e:
-                    logger.warning(f"Model inference failed on crop: {e}")
-                    continue
-
-                boxes = results[0].boxes
-                logger.info(f"🔍 Raw boxes from YOLO (crop): {len(boxes)}")
-
-                for box in boxes:
-                    class_id = int(box.cls[0])
-                    confidence = float(box.conf[0])
-                    bbox = box.xyxy[0].cpu().numpy()
-
-                    # If crop has offset, adjust box coordinates back to original image coords
-                    ox, oy = c.get('offset', (0, 0))
-                    if 'scale' in c:
-                        s = c['scale']
-                        # when cropping we used direct pixel coords, no scaling needed for offset adjust
-                    bbox_adj = [bbox[0] + ox, bbox[1] + oy, bbox[2] + ox, bbox[3] + oy]
-
-                    all_detections.append({
-                        'class_id': class_id,
-                        'confidence': confidence,
-                        'bbox': bbox_adj,
-                    })
+            all_detections = self._run_multi_scale_inference(image_array_bgr)
 
             if len(all_detections) == 0:
                 return {
                     'success': True,
                     'detections': [],
-                    'total_nutrition': {
-                        'calories': 0.0, 'protein': 0.0, 'fat': 0.0,
-                        'carbs': 0.0, 'fiber': 0.0, 'sugar': 0.0
-                    },
+                    'total_nutrition': {'calories': 0.0, 'protein': 0.0, 'fat': 0.0, 'carbs': 0.0, 'fiber': 0.0, 'sugar': 0.0},
                     'items_count': 0,
-                    'message': 'No food items detected'
+                    'message': 'No food items detected',
                 }
 
-            # Simple aggregation: group detections by IoU & class, keep max confidence
-            def iou(boxA, boxB):
-                xA = max(boxA[0], boxB[0])
-                yA = max(boxA[1], boxB[1])
-                xB = min(boxA[2], boxB[2])
-                yB = min(boxA[3], boxB[3])
-                interW = max(0, xB - xA)
-                interH = max(0, yB - yA)
-                interArea = interW * interH
-                boxAArea = max(0, (boxA[2] - boxA[0])) * max(0, (boxA[3] - boxA[1]))
-                boxBArea = max(0, (boxB[2] - boxB[0])) * max(0, (boxB[3] - boxB[1]))
-                union = boxAArea + boxBArea - interArea
-                if union == 0:
-                    return 0
-                return interArea / union
-
-            clusters = []
-            for det in sorted(all_detections, key=lambda x: -x['confidence']):
-                placed = False
-                for cl in clusters:
-                    # if same class and IoU > 0.3, merge
-                    if cl['class_id'] == det['class_id'] and iou(cl['bbox'], det['bbox']) > 0.3:
-                        # keep highest confidence and expand bbox
-                        cl['confidence'] = max(cl['confidence'], det['confidence'])
-                        # expand bbox to include both
-                        cl['bbox'] = [
-                            min(cl['bbox'][0], det['bbox'][0]),
-                            min(cl['bbox'][1], det['bbox'][1]),
-                            max(cl['bbox'][2], det['bbox'][2]),
-                            max(cl['bbox'][3], det['bbox'][3])
-                        ]
-                        placed = True
-                        break
-                if not placed:
-                    clusters.append({
-                        'class_id': det['class_id'],
-                        'confidence': det['confidence'],
-                        'bbox': det['bbox']
-                    })
-
+            clusters = _cluster_detections(all_detections)
             detections = []
             total_nutrition = {'calories': 0.0, 'protein': 0.0, 'fat': 0.0, 'carbs': 0.0, 'fiber': 0.0, 'sugar': 0.0}
 
@@ -247,43 +239,31 @@ class FoodPredictor:
                 class_id = cl['class_id']
                 confidence = cl['confidence']
                 bbox = cl['bbox']
-
-                bbox_w = bbox[2] - bbox[0]
-                bbox_h = bbox[3] - bbox[1]
-                bbox_area = max(0, bbox_w * bbox_h)
-
+                bbox_area = max(0, (bbox[2] - bbox[0]) * (bbox[3] - bbox[1]))
                 category = self.food_categories[class_id]
                 portion_g = self.estimate_portion(bbox_area, img_area)
                 nutrition = self._calculate_nutrition(category, portion_g)
-
                 for key in total_nutrition:
                     total_nutrition[key] += nutrition[key]
-
-                detection_info = {
+                detections.append({
                     'food': category,
                     'confidence': round(confidence, 3),
                     'portion_g': portion_g,
                     'bbox': [float(coord) for coord in bbox],
-                    'nutrition': nutrition
-                }
-                detections.append(detection_info)
+                    'nutrition': nutrition,
+                })
 
             total_nutrition = {k: round(v, 1) for k, v in total_nutrition.items()}
-
+            self.cleanup_gpu()
             return {
                 'success': True,
                 'detections': detections,
                 'total_nutrition': total_nutrition,
                 'items_count': len(detections),
-                'image_dimensions': {'width': w, 'height': h}
+                'image_dimensions': {'width': w, 'height': h},
             }
-            
+
         except Exception as e:
             logger.error(f"Image analysis error: {e}")
-            return {
-                'success': False,
-                'error': f'Analysis failed: {str(e)}',
-                'detections': [],
-                'total_nutrition': {},
-                'items_count': 0
-            }
+            self.cleanup_gpu()
+            return {'success': False, 'error': f'Analysis failed: {str(e)}', 'detections': [], 'total_nutrition': {}, 'items_count': 0}

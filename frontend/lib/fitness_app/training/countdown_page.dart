@@ -57,7 +57,7 @@ class _CountdownPageState extends State<CountdownPage>
       duration: Duration(seconds: 60),
     );
 
-    controller.addListener(() {
+    _timerListener = () {
       if (controller.isAnimating) {
         setState(() {
           progress = controller.value;
@@ -68,11 +68,17 @@ class _CountdownPageState extends State<CountdownPage>
           isPlaying = false;
         });
       }
-    });
+    };
+    controller.addListener(_timerListener);
   }
+
+  VoidCallback? _timerListener;
 
   @override
   void dispose() {
+    if (_timerListener != null) {
+      controller.removeListener(_timerListener!);
+    }
     controller.dispose();
     super.dispose();
   }

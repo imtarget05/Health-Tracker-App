@@ -1,5 +1,5 @@
 import logging
-from typing import Any, Dict
+from typing import Annotated, Any, Dict
 from functools import wraps
 
 from fastapi import FastAPI, UploadFile, File, HTTPException, Query, Request, Depends
@@ -29,6 +29,7 @@ app = FastAPI(
 # Read API key from env (required): clients must include x-api-key header
 import os
 AI_API_KEY = os.environ.get('AI_API_KEY')
+MODEL_NOT_LOADED = "Model not loaded"
 if not AI_API_KEY:
     logger.warning('[SECURITY] AI_API_KEY not set - running with API key protection DISABLED (DANGEROUS!)')
 
@@ -59,7 +60,7 @@ app.add_middleware(
 # =========================
 # ✅ SECURITY: API Key validation middleware
 # =========================
-async def verify_api_key(request: Request):
+def verify_api_key(request: Request):
     """
     Verify API key from x-api-key header
     Called on protected endpoints
@@ -78,6 +79,20 @@ async def verify_api_key(request: Request):
         )
     
     return api_key
+
+def require_ai_key(request: Request):
+    """Helper to require API key without dependency injection"""
+    if not AI_API_KEY:
+        logger.warning('[SECURITY] API_KEY check disabled')
+        return
+    
+    api_key = request.headers.get('x-api-key')
+    if not api_key or api_key != AI_API_KEY:
+        logger.warning('[SECURITY] Invalid API key attempt from %s', request.client.host if request.client else 'unknown')
+        raise HTTPException(
+            status_code=401,
+            detail='Invalid or missing API key in x-api-key header'
+        )
 
 # =========================
 # Helper: chạy phân tích ảnh
@@ -106,10 +121,23 @@ def run_analysis(image_bytes: bytes) -> Dict[str, Any]:
         )
 
 # =========================
+# Startup and Shutdown handlers
+# =========================
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Clean up resources on application shutdown"""
+    try:
+        if predictor is not None:
+            predictor.cleanup_gpu()
+            logger.info("✅ Model cleanup completed on shutdown")
+    except Exception as e:
+        logger.error(f"Error during shutdown cleanup: {e}")
+
+# =========================
 # Endpoint cơ bản
 # =========================
-@app.get("/")
-async def root():
+@app.get("/", responses={200: {"description": "API info"}})
+def root():
     return {
         "message": "Food Detection & Nutrition Analysis API",
         "status": "running",
@@ -117,19 +145,19 @@ async def root():
     }
 
 
-@app.get("/health")
-async def health(api_key: str = Depends(verify_api_key)):  # ✅ Require API key
+@app.get("/health", responses={200: {"description": "Health status"}, 401: {"description": "Unauthorized"}})
+async def health(api_key: Annotated[str, Depends(verify_api_key)]):  # ✅ Require API key
     if predictor is None:
-        return {"status": "error", "detail": "Model not loaded"}
+        return {"status": "error", "detail": MODEL_NOT_LOADED}
     return {"status": "ok"}
 
 # =========================
 # POST /analyze-image
 # Giữ nguyên: upload ảnh thủ công → JSON
 # =========================
-@app.post("/analyze-image")
+@app.post("/analyze-image", responses={200: {"description": "Analysis result"}, 400: {"description": "Invalid file"}, 500: {"description": "Model error"}})
 async def analyze_image(
-    file: UploadFile = File(...),
+    file: Annotated[UploadFile, File(...)],
 ):
     """
     Nhận ảnh (multipart/form-data, field 'file'),
@@ -149,17 +177,17 @@ async def analyze_image(
 # GET /analyze-from-url
 # Endpoint GET mới: gửi URL ảnh → JSON
 # =========================
-@app.get("/analyze-from-url")
+@app.get("/analyze-from-url", responses={200: {"description": "Analysis result"}, 400: {"description": "Invalid URL or image"}, 401: {"description": "Unauthorized"}, 500: {"description": "Model error"}})
 async def analyze_from_url(
     request: Request,
-    image_url: str = Query(..., description="URL của ảnh cần phân tích"),
+    image_url: Annotated[str, Query(..., description="URL của ảnh cần phân tích")],
 ):
     """
     Client gửi link ảnh (?image_url=...), server tải ảnh về,
     chạy model và trả kết quả JSON.
     """
     if predictor is None:
-        raise HTTPException(status_code=500, detail="Model not loaded")
+        raise HTTPException(status_code=500, detail=MODEL_NOT_LOADED)
 
     # API key protection
     require_ai_key(request)
@@ -201,14 +229,14 @@ async def analyze_from_url(
 # the same analysis JSON. This keeps compatibility with backend which posts
 # binary image data directly to /predict.
 # =========================
-@app.post("/predict")
+@app.post("/predict", responses={200: {"description": "Prediction result"}, 400: {"description": "Invalid request"}, 401: {"description": "Unauthorized"}, 500: {"description": "Model error"}})
 async def predict(request: Request):
     """
     Accept raw image bytes (application/octet-stream) in the POST body and
     run the same analysis as /analyze-image.
     """
     if predictor is None:
-        raise HTTPException(status_code=500, detail="Model not loaded")
+        raise HTTPException(status_code=500, detail=MODEL_NOT_LOADED)
 
     # API key protection
     require_ai_key(request)
@@ -234,7 +262,7 @@ if __name__ == "__main__":
 
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
+        host=os.environ.get('HOST', '127.0.0.1'),
         port=8000,
         reload=True,
     )

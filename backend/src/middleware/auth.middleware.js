@@ -13,7 +13,7 @@ export const createProtectRoute = ({ firebasePromise: fp = firebasePromise, getD
                 return res.status(401).json({ message: "Not authorized, no token" });
             }
 
-            const decoded = verify(token); // { userId }
+            const decoded = verify(token);
 
             // ensure firebase initialized and get db safely
             await fp;
@@ -27,7 +27,7 @@ export const createProtectRoute = ({ firebasePromise: fp = firebasePromise, getD
             req.user = userDoc.data();
             next();
         } catch (error) {
-            console.log("Error in auth middleware", error?.message || error);
+            console.error("[AUTH MIDDLEWARE] Error verifying token:", error?.message || error);
             return res.status(401).json({ message: "Invalid or expired token" });
         }
     };

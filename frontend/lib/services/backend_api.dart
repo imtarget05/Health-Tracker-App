@@ -291,4 +291,140 @@ class BackendApi {
   throw Exception('signup failed: ${resp.statusCode} ${resp.body}');
     }
   }
+
+  // ── Health Profile ─────────────────────────────────────────────────────────
+
+  /// GET /health/profile — returns the user's health profile, or null if not set.
+  static Future<Map<String, dynamic>> getHealthProfile({required String jwt}) async {
+    final url = Uri.parse('$baseUrl/health/profile');
+    final resp = await http.get(url, headers: {
+      'Accept': 'application/json',
+      'Authorization': 'Bearer $jwt',
+    });
+    if (resp.statusCode >= 200 && resp.statusCode < 300) {
+      return jsonDecode(resp.body) as Map<String, dynamic>;
+    }
+    EventBus.instance.emitError('Could not load health profile.');
+    throw Exception('getHealthProfile failed: ${resp.statusCode} ${resp.body}');
+  }
+
+  /// PUT /health/profile — create or update the user's health profile.
+  /// Required fields: age, gender, heightCm, weightKg, activityLevel, goal.
+  static Future<Map<String, dynamic>> putHealthProfile({
+    required String jwt,
+    required int age,
+    required String gender,      // 'male' | 'female'
+    required double heightCm,
+    required double weightKg,
+    required String activityLevel, // sedentary|light|moderate|active|veryActive
+    required String goal,          // lose|gain|maintain
+    int? targetWaterMlPerDay,
+  }) async {
+    final url = Uri.parse('$baseUrl/health/profile');
+    final body = <String, dynamic>{
+      'age': age,
+      'gender': gender,
+      'heightCm': heightCm,
+      'weightKg': weightKg,
+      'activityLevel': activityLevel,
+      'goal': goal,
+      if (targetWaterMlPerDay != null) 'targetWaterMlPerDay': targetWaterMlPerDay,
+    };
+    final resp = await http.put(url,
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $jwt',
+        },
+        body: jsonEncode(body));
+    if (resp.statusCode >= 200 && resp.statusCode < 300) {
+      EventBus.instance.emitSuccess('Health profile saved.');
+      return jsonDecode(resp.body) as Map<String, dynamic>;
+    }
+    EventBus.instance.emitError('Could not save health profile.');
+    throw Exception('putHealthProfile failed: ${resp.statusCode} ${resp.body}');
+  }
+
+  /// GET /health/stats/daily?date=YYYY-MM-DD — calories & water summary for one day.
+  static Future<Map<String, dynamic>> getHealthStatsDaily({required String jwt, required String date}) async {
+    final url = Uri.parse('$baseUrl/health/stats/daily?date=$date');
+    final resp = await http.get(url, headers: {
+      'Accept': 'application/json',
+      'Authorization': 'Bearer $jwt',
+    });
+    if (resp.statusCode >= 200 && resp.statusCode < 300) {
+      return jsonDecode(resp.body) as Map<String, dynamic>;
+    }
+    EventBus.instance.emitError('Could not load daily health stats.');
+    throw Exception('getHealthStatsDaily failed: ${resp.statusCode} ${resp.body}');
+  }
+
+  // ── Stats ──────────────────────────────────────────────────────────────────
+
+  /// GET /stats/daily?date=YYYY-MM-DD
+  static Future<Map<String, dynamic>> getStatsDaily({required String jwt, required String date}) async {
+    final url = Uri.parse('$baseUrl/stats/daily?date=$date');
+    final resp = await http.get(url, headers: {
+      'Accept': 'application/json',
+      'Authorization': 'Bearer $jwt',
+    });
+    if (resp.statusCode >= 200 && resp.statusCode < 300) {
+      return jsonDecode(resp.body) as Map<String, dynamic>;
+    }
+    EventBus.instance.emitError('Could not load daily stats.');
+    throw Exception('getStatsDaily failed: ${resp.statusCode} ${resp.body}');
+  }
+
+  /// GET /stats/weekly?start=YYYY-MM-DD
+  static Future<Map<String, dynamic>> getStatsWeekly({required String jwt, required String startDate}) async {
+    final url = Uri.parse('$baseUrl/stats/weekly?start=$startDate');
+    final resp = await http.get(url, headers: {
+      'Accept': 'application/json',
+      'Authorization': 'Bearer $jwt',
+    });
+    if (resp.statusCode >= 200 && resp.statusCode < 300) {
+      return jsonDecode(resp.body) as Map<String, dynamic>;
+    }
+    EventBus.instance.emitError('Could not load weekly stats.');
+    throw Exception('getStatsWeekly failed: ${resp.statusCode} ${resp.body}');
+  }
+
+  /// GET /stats/monthly?month=YYYY-MM
+  static Future<Map<String, dynamic>> getStatsMonthly({required String jwt, required String month}) async {
+    final url = Uri.parse('$baseUrl/stats/monthly?month=$month');
+    final resp = await http.get(url, headers: {
+      'Accept': 'application/json',
+      'Authorization': 'Bearer $jwt',
+    });
+    if (resp.statusCode >= 200 && resp.statusCode < 300) {
+      return jsonDecode(resp.body) as Map<String, dynamic>;
+    }
+    EventBus.instance.emitError('Could not load monthly stats.');
+    throw Exception('getStatsMonthly failed: ${resp.statusCode} ${resp.body}');
+  }
+
+  // ── Workouts ───────────────────────────────────────────────────────────────
+
+  /// POST /workouts — log a completed workout.
+  static Future<Map<String, dynamic>> postWorkout({
+    required String jwt,
+    String type = 'cardio',
+    int duration = 0,
+    int caloriesBurned = 0,
+  }) async {
+    final url = Uri.parse('$baseUrl/workouts');
+    final resp = await http.post(url,
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $jwt',
+        },
+        body: jsonEncode({'type': type, 'duration': duration, 'caloriesBurned': caloriesBurned}));
+    if (resp.statusCode >= 200 && resp.statusCode < 300) {
+      EventBus.instance.emitSuccess('Workout logged.');
+      return jsonDecode(resp.body) as Map<String, dynamic>;
+    }
+    EventBus.instance.emitError('Could not log workout.');
+    throw Exception('postWorkout failed: ${resp.statusCode} ${resp.body}');
+  }
 }

@@ -75,6 +75,17 @@ export class CacheService {
       return false;
     }
   }
+
+  async close() {
+    try {
+      if (this.redis) {
+        await this.redis.quit();
+        logger.info('Cache (Redis) connection closed');
+      }
+    } catch (error) {
+      logger.error({ error }, 'Error closing Redis connection');
+    }
+  }
 }
 
 export const cacheService = new CacheService();

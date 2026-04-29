@@ -1,9 +1,9 @@
-// src/controllers/oauth.controller.js
+﻿// src/controllers/oauth.controller.js
 import { firebasePromise, getAuth, getDb } from "../lib/firebase.js";
 import { generateToken } from "../lib/utils.js";
 import { OAuth2Client } from "google-auth-library";
 import { GOOGLE_CLIENT_ID } from "../config/env.js";
-import crypto from 'crypto';
+import crypto from 'node:crypto';
 import jwt from 'jsonwebtoken';
 import { createPublicKey } from 'node:crypto';
 import fetch from 'node-fetch';
@@ -20,7 +20,7 @@ const _base64urlToBuffer = (s) => {
     // add padding
     const pad = 4 - (s.length % 4);
     const padded = s + (pad === 4 ? '' : '='.repeat(pad));
-    return Buffer.from(padded.replace(/-/g, '+').replace(/_/g, '/'), 'base64');
+    return Buffer.from(padded.replaceAll(/-/g, '+').replaceAll(/_/g, '/'), 'base64');
 };
 
 const _jwkToPem = (jwk) => {
@@ -72,10 +72,29 @@ const fetchFacebookJwks = async () => {
     return _fbJwksCache.keys;
 };
 
+// Helper: validate JWT nonce claim against provided nonce (raw or digest)
+const _validateJwtNonce = (payload, nonce) => {
+    const tokenNonce = payload.nonce;
+    const tokenNonceDigest = payload.nonce_digest;
+    let nonceValid = false;
+    if (tokenNonce != null && String(tokenNonce) === String(nonce)) {
+        nonceValid = true;
+    }
+    if (!nonceValid && tokenNonceDigest != null) {
+        const hash = crypto.createHash('sha256').update(String(nonce)).digest();
+        const b64 = hash.toString('base64')
+            .replaceAll(/=/g, '')
+            .replaceAll(/\+/g, '-')
+            .replaceAll(/\//g, '_');
+        if (String(tokenNonceDigest) === b64) nonceValid = true;
+    }
+    if (!nonceValid) throw new Error('JWT nonce verification failed - possible replay attack');
+};
+
 const verifyFacebookLimitedLoginJwt = async ({ token, expectedAppId, nonce }) => {
     // Decode header to find kid
     const decoded = jwt.decode(token, { complete: true });
-    if (!decoded || !decoded.header) {
+    if (!decoded?.header) {
         throw new Error('Unable to decode JWT header');
     }
     const kid = decoded.header.kid;
@@ -112,39 +131,14 @@ const verifyFacebookLimitedLoginJwt = async ({ token, expectedAppId, nonce }) =>
     // SECURITY FIX: Validate nonce to prevent replay attacks
     // If nonce is provided, the token MUST contain matching nonce or nonce_digest
     if (nonce) {
-        const tokenNonce = payload.nonce;
-        const tokenNonceDigest = payload.nonce_digest;
-
-        let nonceValid = false;
-
-        // If token carries a raw nonce, compare directly
-        if (tokenNonce != null && String(tokenNonce) === String(nonce)) {
-            nonceValid = true;
-        }
-
-        // If token carries a nonce_digest, compare with base64url(sha256(nonce))
-        if (!nonceValid && tokenNonceDigest != null) {
-            const hash = crypto.createHash('sha256').update(String(nonce)).digest();
-            const b64 = hash.toString('base64')
-                .replace(/=/g, '')
-                .replace(/\+/g, '-')
-                .replace(/\//g, '_');
-            if (String(tokenNonceDigest) === b64) {
-                nonceValid = true;
-            }
-        }
-
-        // Throw error if nonce validation fails - prevents replay attacks
-        if (!nonceValid) {
-            throw new Error('JWT nonce verification failed - possible replay attack');
-        }
+        _validateJwtNonce(payload, nonce);
     }
 
     return payload;
 };
 
 const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
-// Helper: tạo hoặc lấy user theo email
+// Helper: táº¡o hoáº·c láº¥y user theo email
 const getOrCreateUserByEmail = async ({
     email,
     name,
@@ -156,7 +150,7 @@ const getOrCreateUserByEmail = async ({
     const db = getDb();
     const auth = getAuth();
 
-    // Tìm trong Firestore trước
+    // TÃ¬m trong Firestore trÆ°á»›c
     const usersSnapshot = await db
         .collection("users")
         .where("email", "==", email)
@@ -168,11 +162,11 @@ const getOrCreateUserByEmail = async ({
         return user;
     }
 
-    // Nếu chưa có, thử tạo user trong Firebase Auth.
-    // Nhưng nếu email đã tồn tại trong Firebase Auth (ví dụ đăng nhập bằng Google
-    // khi người dùng đã đăng ký bằng email), thì lấy user hiện có và đảm bảo
-    // hồ sơ Firestore tồn tại. Điều này cho phép luồng Google sign-in chấp nhận
-    // email trùng lặp mà không báo lỗi "Email already exists".
+    // Náº¿u chÆ°a cÃ³, thá»­ táº¡o user trong Firebase Auth.
+    // NhÆ°ng náº¿u email Ä‘Ã£ tá»“n táº¡i trong Firebase Auth (vÃ­ dá»¥ Ä‘Äƒng nháº­p báº±ng Google
+    // khi ngÆ°á»i dÃ¹ng Ä‘Ã£ Ä‘Äƒng kÃ½ báº±ng email), thÃ¬ láº¥y user hiá»‡n cÃ³ vÃ  Ä‘áº£m báº£o
+    // há»“ sÆ¡ Firestore tá»“n táº¡i. Äiá»u nÃ y cho phÃ©p luá»“ng Google sign-in cháº¥p nháº­n
+    // email trÃ¹ng láº·p mÃ  khÃ´ng bÃ¡o lá»—i "Email already exists".
     try {
         const userRecord = await auth.createUser({
             email,
@@ -188,7 +182,7 @@ const getOrCreateUserByEmail = async ({
             profilePic: picture || "",
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
-            // Lưu thêm provider info cho rõ ràng
+            // LÆ°u thÃªm provider info cho rÃµ rÃ ng
             provider,
             providerId,
         };
@@ -197,21 +191,21 @@ const getOrCreateUserByEmail = async ({
 
         return userProfile;
     } catch (err) {
-        // Nếu lỗi là email đã tồn tại trong Firebase Auth, lấy user đó thay vì
-        // trả về lỗi. Những lỗi khác thì ném tiếp.
-        if (err && (err.code === 'auth/email-already-exists' || (err.message && err.message.includes('email-already-exists')))) {
+        // Náº¿u lá»—i lÃ  email Ä‘Ã£ tá»“n táº¡i trong Firebase Auth, láº¥y user Ä‘Ã³ thay vÃ¬
+        // tráº£ vá» lá»—i. Nhá»¯ng lá»—i khÃ¡c thÃ¬ nÃ©m tiáº¿p.
+        if (err && (err.code === 'auth/email-already-exists' || err.message?.includes('email-already-exists'))) {
             console.log('getOrCreateUserByEmail: email exists in Auth, fetching existing user by email=', email);
-            // Lấy thông tin user từ Firebase Auth
+            // Láº¥y thÃ´ng tin user tá»« Firebase Auth
             const existing = await auth.getUserByEmail(email);
 
-            // Kiểm tra xem có document Firestore cho uid này chưa
+            // Kiá»ƒm tra xem cÃ³ document Firestore cho uid nÃ y chÆ°a
             const userDoc = await db.collection('users').doc(existing.uid).get();
             if (userDoc.exists) {
                 return userDoc.data();
             }
 
-            // Nếu chưa có profile trong Firestore, tạo profile từ userRecord
-            const createdAt = existing.metadata && existing.metadata.creationTime ? new Date(existing.metadata.creationTime).toISOString() : new Date().toISOString();
+            // Náº¿u chÆ°a cÃ³ profile trong Firestore, táº¡o profile tá»« userRecord
+            const createdAt = existing.metadata?.creationTime ? new Date(existing.metadata.creationTime).toISOString() : new Date().toISOString();
             const userProfile = {
                 uid: existing.uid,
                 email: existing.email,
@@ -296,7 +290,7 @@ const getOrCreateUserByProvider = async ({
             photoURL: picture || undefined,
         });
     } catch (err) {
-        if (err && (err.code === 'auth/email-already-exists' || (err.message && err.message.includes('email-already-exists')))) {
+        if (err && (err.code === 'auth/email-already-exists' || err.message?.includes('email-already-exists'))) {
             userRecord = await auth.getUserByEmail(syntheticEmail);
         } else {
             throw err;
@@ -327,6 +321,89 @@ const getOrCreateUserByProvider = async ({
     return userProfile;
 };
 
+// Helper: handle Facebook Limited Login (JWT path)
+const _handleFacebookLimitedLogin = async (normalizedToken, nonce, res) => {
+    try {
+        const payload = await verifyFacebookLimitedLoginJwt({
+            token: normalizedToken,
+            expectedAppId: process.env.FACEBOOK_APP_ID,
+            nonce: nonce ? String(nonce) : undefined,
+        });
+        const facebookId = payload.sub || payload.user_id || payload.id;
+        const email = payload.email;
+        const name = payload.name || payload.given_name || payload.family_name || 'Facebook User';
+        const user = await getOrCreateUserByProvider({
+            provider: 'facebook',
+            providerId: facebookId || 'facebook',
+            email,
+            name,
+            picture: '',
+        });
+        const token = generateToken(user.uid, res);
+        return res.status(200).json(buildOAuthResponse(user, token));
+    } catch (e) {
+        console.log('facebookAuth: Limited Login JWT verification failed:', e?.message || e);
+        return res.status(401).json({ message: 'Invalid Facebook token', details: { type: 'limited_login_jwt', error: e?.message || String(e) } });
+    }
+};
+
+// Helper: verify Facebook access token via debug_token endpoint.
+// Returns true to continue, false if request was already rejected.
+const _runFacebookDebugToken = async (normalizedToken, rawToken, requestId, req, res) => {
+    try {
+        console.log('facebookAuth: requestId=', requestId);
+        console.log('facebookAuth: using FACEBOOK_APP_ID=', process.env.FACEBOOK_APP_ID);
+        const appAccess = `${process.env.FACEBOOK_APP_ID}|${process.env.FACEBOOK_APP_SECRET}`;
+        try {
+            console.log('facebookAuth: appAccessHash=', crypto.createHash('sha256').update(appAccess).digest('hex'));
+        } catch (hErr) {
+            console.log('facebookAuth: failed computing appAccessHash', hErr?.message || hErr);
+        }
+        console.log('facebookAuth: tokenLength=', normalizedToken.length);
+        console.log('facebookAuth: tokenHasWhitespace=', /\s/.test(rawToken));
+        console.log('facebookAuth: tokenHasPipes=', normalizedToken.includes('|'));
+        let userHash = null;
+        try {
+            userHash = crypto.createHash('sha256').update(normalizedToken).digest('hex');
+            console.log('facebookAuth: userAccessHash=', userHash);
+        } catch (uhErr) {
+            console.log('facebookAuth: failed computing userAccessHash', uhErr?.message || uhErr);
+        }
+        try {
+            const clientHash = req.get('X-Client-Token-Sha256');
+            if (clientHash) {
+                console.log('facebookAuth: clientTokenSha256=', clientHash);
+                if (userHash && clientHash !== userHash) {
+                    console.log('facebookAuth: token hash mismatch client vs received', clientHash, userHash);
+                    if (process.env.NODE_ENV !== 'production') {
+                        res.status(401).json({ message: 'Invalid Facebook token', details: { reason: 'token_hash_mismatch', clientHash, serverHash: userHash } });
+                        return false;
+                    }
+                }
+            }
+        } catch (hdrErr) {
+            console.log('facebookAuth: failed reading client header X-Client-Token-Sha256', hdrErr?.message || hdrErr);
+        }
+        const debugUrl = `https://graph.facebook.com/debug_token?input_token=${encodeURIComponent(normalizedToken)}&access_token=${encodeURIComponent(appAccess)}`;
+        const debugResp = await fetch(debugUrl);
+        const debugData = await debugResp.json();
+        console.log('facebookAuth: debug_token status=', debugResp.status, 'body=', JSON.stringify(debugData));
+        if (!debugResp.ok || !debugData?.data?.is_valid) {
+            res.status(401).json({ message: 'Invalid Facebook token', details: { type: 'graph_debug_token', data: debugData } });
+            return false;
+        }
+        if (debugData.data.app_id && debugData.data.app_id !== process.env.FACEBOOK_APP_ID) {
+            console.log('Facebook token app_id mismatch:', debugData.data.app_id);
+            res.status(401).json({ message: 'Facebook token does not belong to this app', details: debugData });
+            return false;
+        }
+        return true;
+    } catch (e) {
+        console.log('Error while debugging Facebook token (fetch/debug_token):', e?.message || e);
+        return true; // fallthrough: proceed to /me call
+    }
+};
+
 // ============= FACEBOOK AUTH =============
 export const facebookAuth = async (req, res) => {
     try {
@@ -344,177 +421,49 @@ export const facebookAuth = async (req, res) => {
         const rawToken = String(accessToken ?? '');
         const normalizedToken = rawToken
             .trim()
-            .replace(/^"|"$/g, '')
-            .replace(/[\r\n\t\s]+/g, '');
+            .replaceAll(/^"|"$/g, '')
+            .replaceAll(/\s+/g, '');
 
         // If token looks like a JWT (Limited Login), verify via JWKS.
         if (_isJwtLike(normalizedToken) || normalizedToken.startsWith('eyJ')) {
-            try {
-                console.log('facebookAuth: detected JWT-like token (Limited Login)');
-                const payload = await verifyFacebookLimitedLoginJwt({
-                    token: normalizedToken,
-                    expectedAppId: process.env.FACEBOOK_APP_ID,
-                    nonce: nonce ? String(nonce) : undefined,
-                });
-
-                const facebookId = payload.sub || payload.user_id || payload.id;
-                const email = payload.email;
-                const name = payload.name || payload.given_name || payload.family_name || 'Facebook User';
-
-                const user = await getOrCreateUserByProvider({
-                    provider: 'facebook',
-                    providerId: facebookId || 'facebook',
-                    email,
-                    name,
-                    picture: '',
-                });
-
-                const token = generateToken(user.uid, res);
-                return res.status(200).json(buildOAuthResponse(user, token));
-            } catch (e) {
-                console.log('facebookAuth: Limited Login JWT verification failed:', e?.message || e);
-                return res.status(401).json({
-                    message: 'Invalid Facebook token',
-                    details: { type: 'limited_login_jwt', error: e?.message || String(e) },
-                });
-            }
+            console.log('facebookAuth: detected JWT-like token (Limited Login)');
+            return _handleFacebookLimitedLogin(normalizedToken, nonce, res);
         }
 
         // Otherwise: classic access token flow with debug_token
-        // First verify the token using the app access token via debug_token
-        try {
-            console.log('facebookAuth: requestId=', requestId);
-            // Log only the app id (do not log the secret).
-            console.log('facebookAuth: using FACEBOOK_APP_ID=', process.env.FACEBOOK_APP_ID);
-            const appAccess = `${process.env.FACEBOOK_APP_ID}|${process.env.FACEBOOK_APP_SECRET}`;
-            // Log a SHA256 hash of the app access token so we can verify which secret the
-            // running process has without printing the secret itself.
-            try {
-                const appAccessHash = crypto.createHash('sha256').update(appAccess).digest('hex');
-                console.log('facebookAuth: appAccessHash=', appAccessHash);
-            } catch (hErr) {
-                console.log('facebookAuth: failed computing appAccessHash', hErr?.message || hErr);
-            }
-            // Ensure tokens are URL-encoded when interpolated into query strings.
-            // Also compute a non-reversible hash of the incoming user token for log correlation.
-            // Token meta (never log raw user token)
-            console.log('facebookAuth: tokenLength=', normalizedToken.length);
-            console.log('facebookAuth: tokenHasWhitespace=', /\s/.test(rawToken));
-            console.log('facebookAuth: tokenHasPipes=', normalizedToken.includes('|'));
+        const debugOk = await _runFacebookDebugToken(normalizedToken, rawToken, requestId, req, res);
+        if (!debugOk) return;
 
-            let userHash = null;
-            try {
-                userHash = crypto.createHash('sha256').update(normalizedToken).digest('hex');
-                console.log('facebookAuth: userAccessHash=', userHash);
-            } catch (uhErr) {
-                console.log('facebookAuth: failed computing userAccessHash', uhErr?.message || uhErr);
-            }
-
-            // If the client sent its token hash (debug header), verify it matches
-            // the token the server received.
-            try {
-                const clientHash = req.get('X-Client-Token-Sha256');
-                if (clientHash) {
-                    console.log('facebookAuth: clientTokenSha256=', clientHash);
-                    if (userHash && clientHash !== userHash) {
-                        console.log('facebookAuth: token hash mismatch client vs received', clientHash, userHash);
-                        // In development return a helpful mismatch message.
-                        if (process.env.NODE_ENV !== 'production') {
-                            return res.status(401).json({
-                                message: 'Invalid Facebook token',
-                                details: {
-                                    reason: 'token_hash_mismatch',
-                                    clientHash,
-                                    serverHash: userHash,
-                                },
-                            });
-                        }
-                    }
-                }
-            } catch (hdrErr) {
-                console.log('facebookAuth: failed reading client header X-Client-Token-Sha256', hdrErr?.message || hdrErr);
-            }
-
-            const debugUrl = `https://graph.facebook.com/debug_token?input_token=${encodeURIComponent(normalizedToken)}&access_token=${encodeURIComponent(appAccess)}`;
-            const debugResp = await fetch(debugUrl);
-            const debugData = await debugResp.json();
-
-            // Log the debug_token response to help diagnose invalid app id / bad signature errors.
-            console.log('facebookAuth: debug_token status=', debugResp.status, 'body=', JSON.stringify(debugData));
-
-            if (!debugResp.ok || !(debugData && debugData.data && debugData.data.is_valid)) {
-                // If Facebook reports an application validation error, surface that clearly.
-                return res.status(401).json({
-                    message: 'Invalid Facebook token',
-                    details: { type: 'graph_debug_token', data: debugData },
-                });
-            }
-
-            // optional: ensure token belongs to this app
-            if (debugData.data.app_id && debugData.data.app_id !== process.env.FACEBOOK_APP_ID) {
-                console.log('Facebook token app_id mismatch:', debugData.data.app_id);
-                return res.status(401).json({ message: 'Facebook token does not belong to this app', details: debugData });
-            }
-        } catch (e) {
-            console.log('Error while debugging Facebook token (fetch/debug_token):', e?.message || e);
-            // proceed to attempt /me call, the subsequent check will catch invalid token
-        }
-
-        // Important: always URL-encode the user access token when building query strings.
-        // Some tokens can contain characters that break the URL and lead to
-        // “Malformed access token” / “Cannot parse access token”.
         const facebookResponse = await fetch(
-            `https://graph.facebook.com/v18.0/me?fields=id,name,email,picture&access_token=${encodeURIComponent(
-                normalizedToken
-            )}`
+            `https://graph.facebook.com/v18.0/me?fields=id,name,email,picture&access_token=${encodeURIComponent(normalizedToken)}`
         );
-
         const facebookData = await facebookResponse.json();
-
         if (!facebookResponse.ok) {
-            console.log("Facebook token error:", facebookData);
+            console.error("Facebook token error:", facebookData);
             return res.status(401).json({ message: "Invalid Facebook token", details: facebookData });
         }
-
         const { id: facebookId, name, email, picture } = facebookData;
-
         if (!email) {
-            // Có trường hợp Facebook không trả email (privacy setting)
-            return res.status(400).json({
-                message: "Facebook account does not have a public email",
-            });
+            return res.status(400).json({ message: "Facebook account does not have a public email" });
         }
-
         const profilePicUrl = picture?.data?.url || "";
-
-        const user = await getOrCreateUserByEmail({
-            email,
-            name,
-            picture: profilePicUrl,
-            provider: "facebook",
-            providerId: facebookId,
-        });
-
+        const user = await getOrCreateUserByEmail({ email, name, picture: profilePicUrl, provider: "facebook", providerId: facebookId });
         const token = generateToken(user.uid, res);
-
         return res.status(200).json(buildOAuthResponse(user, token));
     } catch (error) {
-        console.log("Error in Facebook auth:", error);
-
+        console.error("Error in Facebook auth:", error);
         if (error.code === "auth/email-already-exists") {
             return res.status(400).json({ message: "Email already exists" });
         }
-
         return res.status(500).json({ message: "Internal server error" });
     }
 };
-
 // Lightweight test endpoint for health-checking Facebook auth wiring.
 // Does not create users or modify data. Returns whether JWKS can be fetched
 // and whether FACEBOOK_APP_ID is configured.
 export const facebookAuthTest = async (req, res) => {
     try {
-        const jwksReady = !!(_fbJwksCache.keys && _fbJwksCache.keys.length);
+        const jwksReady = !!_fbJwksCache.keys?.length;
         let jwksCount = jwksReady ? _fbJwksCache.keys.length : 0;
         // Try fetching JWKS if not cached yet, but don't fail on errors.
         if (!jwksReady) {
@@ -522,7 +471,7 @@ export const facebookAuthTest = async (req, res) => {
                 const keys = await fetchFacebookJwks();
                 jwksCount = keys.length;
             } catch (e) {
-                // ignore
+                console.warn('facebookAuthTest: failed to fetch JWKS', e?.message || e);
             }
         }
 

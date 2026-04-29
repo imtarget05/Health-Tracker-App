@@ -1,8 +1,8 @@
 // src/middleware/upload-middleware.js
 import multer from "multer";
-import path from "path";
-import fs from "fs";
-import { fileURLToPath } from "url";
+import path from "node:path";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import { fileTypeFromBuffer } from "file-type";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -11,8 +11,8 @@ const __dirname = path.dirname(__filename);
 // Upload directory with size limits
 const uploadTempDir = path.join(__dirname, "tmp");
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
-const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
-const ALLOWED_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif'];
+const ALLOWED_MIME_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const ALLOWED_EXTENSIONS = new Set(['.jpg', '.jpeg', '.png', '.webp', '.heic', '.heif']);
 
 if (!fs.existsSync(uploadTempDir)) {
     fs.mkdirSync(uploadTempDir, { recursive: true });
@@ -41,7 +41,7 @@ const upload = multer({
         const orig = file.originalname || '';
         const ext = path.extname(orig).toLowerCase();
 
-        if (!ext || !ALLOWED_EXTENSIONS.includes(ext)) {
+        if (!ext || !ALLOWED_EXTENSIONS.has(ext)) {
             const err = new Error('Invalid file extension. Only jpg, png, webp, heic allowed');
             err.status = 400;
             return cb(err);
@@ -87,7 +87,7 @@ export const validateFileMagicNumber = async (req, res, next) => {
         const declaredExt = path.extname(req.file.originalname).toLowerCase();
         const detectedMime = fileType.mime;
 
-        if (!ALLOWED_MIME_TYPES.includes(detectedMime)) {
+        if (!ALLOWED_MIME_TYPES.has(detectedMime)) {
             fs.unlinkSync(filePath);
             return res.status(400).json({
                 message: 'File type not allowed. Only JPEG, PNG, WebP allowed'
@@ -124,16 +124,23 @@ export const validateFileMagicNumber = async (req, res, next) => {
 };
 
 // Cleanup temporary files periodically (every 24 hours)
+let _cleanupInterval = null;
+
 const cleanupOldUploads = () => {
     const maxAge = 24 * 60 * 60 * 1000; // 24 hours
 
     try {
         fs.readdirSync(uploadTempDir).forEach(file => {
             const filePath = path.join(uploadTempDir, file);
-            const stat = fs.statSync(filePath);
-            if (Date.now() - stat.mtimeMs > maxAge) {
-                fs.unlinkSync(filePath);
-                console.log(`[Cleanup] Deleted old upload: ${file}`);
+            try {
+                const stat = fs.statSync(filePath);
+                if (Date.now() - stat.mtimeMs > maxAge) {
+                    fs.unlinkSync(filePath);
+                    console.log(`[Cleanup] Deleted old upload: ${file}`);
+                }
+            } catch (fileErr) {
+                console.error(`[Cleanup] Error processing file ${file}:`, fileErr);
+                // Continue processing other files
             }
         });
     } catch (err) {
@@ -142,6 +149,18 @@ const cleanupOldUploads = () => {
 };
 
 // Run cleanup every 6 hours
-setInterval(cleanupOldUploads, 6 * 60 * 60 * 1000);
+export const startUploadCleanup = () => {
+    if (_cleanupInterval) return;
+    _cleanupInterval = setInterval(cleanupOldUploads, 6 * 60 * 60 * 1000);
+    console.log('[Upload] Cleanup scheduler started');
+};
+
+export const stopUploadCleanup = () => {
+    if (_cleanupInterval) {
+        clearInterval(_cleanupInterval);
+        _cleanupInterval = null;
+        console.log('[Upload] Cleanup scheduler stopped');
+    }
+};
 
 export default upload;

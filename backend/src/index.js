@@ -184,7 +184,7 @@ const startServer = async () => {
             });
         });
 
-        app.listen(PORT, () => {
+        server = app.listen(PORT, () => {
             console.log("🚀 Server is running on port:", PORT);
             console.log("🗄  Using Firebase Firestore for database");
             console.log("🔓 CORS origins:", ORIGINS);
@@ -196,6 +196,61 @@ const startServer = async () => {
 };
 
 startServer();
+
+// ===== GRACEFUL SHUTDOWN HANDLER =====
+// Store references to scheduled tasks for cleanup
+let server = null;
+let schedulerIntervals = [];
+
+const gracefulShutdown = async (signal) => {
+    console.log(`\n[SHUTDOWN] Received ${signal}, starting graceful shutdown...`);
+    
+    // Stop server from accepting new connections
+    if (server) {
+        server.close(() => {
+            console.log('[SHUTDOWN] HTTP server closed');
+        });
+    }
+    
+    // Clear all scheduled intervals
+    if (globalThis.shutdownTasks && typeof globalThis.shutdownTasks === 'function') {
+        try {
+            await globalThis.shutdownTasks();
+            console.log('[SHUTDOWN] Cleanup tasks completed');
+        } catch (err) {
+            console.error('[SHUTDOWN] Error during cleanup:', err);
+        }
+    }
+    
+    // Close Firebase connections
+    try {
+        const { getApp } = await import('./lib/firebase.js');
+        const app = getApp();
+        if (app) {
+            await app.delete();
+            console.log('[SHUTDOWN] Firebase connections closed');
+        }
+    } catch (err) {
+        console.error('[SHUTDOWN] Error closing Firebase:', err);
+    }
+    
+    // Close Redis connections
+    try {
+        const { cacheService } = await import('./lib/cache.service.js');
+        if (cacheService?.redis) {
+            await cacheService.redis.quit();
+            console.log('[SHUTDOWN] Redis connection closed');
+        }
+    } catch (err) {
+        console.error('[SHUTDOWN] Error closing Redis:', err);
+    }
+    
+    console.log('[SHUTDOWN] Graceful shutdown complete');
+    process.exit(0);
+};
+
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Error handler (must be after routes)
 // ===== PHASE 4: Centralized Error Handling =====

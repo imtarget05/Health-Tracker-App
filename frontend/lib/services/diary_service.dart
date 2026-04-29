@@ -2,6 +2,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:flutter/foundation.dart';
 import '../models/diary.dart';
+import 'auth_storage.dart';
+import 'backend_api.dart';
 
 class DiaryService {
   final FirebaseFirestore _db;
@@ -105,6 +107,17 @@ class DiaryService {
         // ignore non-fatal profile mirror errors
       }
     });
+
+    // Sync to backend waterLogs collection so that GET /stats/daily and
+    // GET /water return correct data. Fire-and-forget; diary is source of truth.
+    if (deltaMl > 0) {
+      final jwt = AuthStorage.token;
+      if (jwt != null && jwt.isNotEmpty) {
+        BackendApi.postWater(jwt: jwt, amountMl: deltaMl).catchError((e) {
+          debugPrint('DiaryService.incrementWater: backend sync failed (non-fatal): $e');
+        });
+      }
+    }
   }
 
   Future<void> setDailyWaterGoal(DateTime date, int goalMl) async {
